@@ -122,6 +122,25 @@ func New(c config.PolicyConfig) (*Policy, error) {
 // Mode reports the deployment's ceiling.
 func (p *Policy) Mode() Mode { return p.mode }
 
+// Scopes are the header-configuration scopes this deployment can honor, in
+// order of increasing privilege.
+//
+// It exists for the protected resource metadata: a client reads that document
+// to learn what it may ask its authorization server for, and advertising a
+// scope the deployment would refuse anyway sends it on a step-up trip that
+// ends in the same refusal.
+func (p *Policy) Scopes() []string {
+	var scopes []string
+	for _, m := range modes {
+		if rank(m) <= rank(p.mode) {
+			if scope, ok := scopeFor[m]; ok {
+				scopes = append(scopes, scope)
+			}
+		}
+	}
+	return scopes
+}
+
 // CheckHeader decides whether the subject may have this header applied at all.
 //
 // It runs before the header is merged, deliberately. A header the deployment
