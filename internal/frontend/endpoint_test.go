@@ -306,9 +306,15 @@ func send(t *testing.T, url, method string, body []byte, headers map[string]stri
 		}
 		req.Header.Set(k, v)
 	}
+	return do(t, req)
+}
+
+// do performs a request and reads the whole answer.
+func do(t *testing.T, req *http.Request) response {
+	t.Helper()
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("post %s: %v", method, err)
+		t.Fatalf("%s %s: %v", req.Method, req.URL, err)
 	}
 	defer res.Body.Close() //nolint:errcheck // nothing to do with a close error here
 	raw, err := io.ReadAll(res.Body)

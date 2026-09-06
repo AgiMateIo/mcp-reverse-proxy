@@ -51,13 +51,13 @@
 
 ## 6. Authorization
 
-- [ ] 6.1 Serve the RFC 9728 protected resource metadata document, and verify it exposes `resource`, `authorization_servers`, and `scopes_supported` with a canonical fragment-free resource URI
-- [ ] 6.2 Reject unauthenticated requests with `401` and a `WWW-Authenticate` challenge carrying `resource_metadata` and `scope`, and verify the header contents
-- [ ] 6.3 Validate token signature, expiry, issuer, and audience against the canonical URI, and verify each rejection path returns `401`
-- [ ] 6.4 Reject tokens supplied in the query string, and verify the token is not accepted
-- [ ] 6.5 Derive the subject identifier from the `iss` and `sub` pair, and verify two issuers sharing a `sub` value yield distinct subjects
-- [ ] 6.6 Reject validated tokens lacking `sub` with `401`, and verify with a crafted token
-- [ ] 6.7 Confirm the presented access token never reaches child process env or args, and verify by asserting on the spawned fixture's observed environment
+- [x] 6.1 Serve the RFC 9728 protected resource metadata document, and verify it exposes `resource`, `authorization_servers`, and `scopes_supported` with a canonical fragment-free resource URI
+- [x] 6.2 Reject unauthenticated requests with `401` and a `WWW-Authenticate` challenge carrying `resource_metadata` and `scope`, and verify the header contents
+- [x] 6.3 Validate token signature, expiry, issuer, and audience against the canonical URI, and verify each rejection path returns `401`
+- [x] 6.4 Reject tokens supplied in the query string, and verify the token is not accepted
+- [x] 6.5 Derive the subject identifier from the `iss` and `sub` pair, and verify two issuers sharing a `sub` value yield distinct subjects
+- [x] 6.6 Reject validated tokens lacking `sub` with `401`, and verify with a crafted token
+- [x] 6.7 Confirm the presented access token never reaches child process env or args, and verify by asserting on the spawned fixture's observed environment
 
 ## 7. Process pool
 

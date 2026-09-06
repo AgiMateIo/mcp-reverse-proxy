@@ -106,6 +106,10 @@ type Options struct {
 	// IgnoreStdinClose makes the fixture keep running after its standard input
 	// is closed, which is what forces the escalation to signals.
 	IgnoreStdinClose bool
+	// EnvDumpFile, when non-empty, makes the fixture record its whole
+	// environment and argument list at startup. It is how a test can see
+	// exactly what the gateway handed the process — and what it did not.
+	EnvDumpFile string
 	// ExitOnCall makes a call to the "exit" tool terminate the fixture without
 	// answering, which is how a request in flight when its backend dies is
 	// staged. It calls os.Exit, so it is only meaningful — and only safe — in
@@ -132,6 +136,11 @@ func RunWith(ctx context.Context, mode Mode, opts Options, stdin io.Reader, stdo
 	f.opts = opts
 	if opts.Revision == "" {
 		f.opts.Revision = versionLegacy
+	}
+	if opts.EnvDumpFile != "" {
+		if err := f.dumpEnvironment(); err != nil {
+			return err
+		}
 	}
 	if opts.ChildPIDFile != "" {
 		if err := f.spawnChild(); err != nil {
@@ -380,6 +389,16 @@ func (f *fixture) spawnChild() error {
 	pid := strconv.Itoa(child.Process.Pid)
 	if err := os.WriteFile(f.opts.ChildPIDFile, []byte(pid), 0o600); err != nil {
 		return fmt.Errorf("testfixtures: record child pid: %w", err)
+	}
+	return nil
+}
+
+// dumpEnvironment lets a test assert on what reached the process, rather than
+// on what the gateway believes it passed.
+func (f *fixture) dumpEnvironment() error {
+	record := strings.Join(os.Environ(), "\n") + "\n--args--\n" + strings.Join(os.Args, "\n") + "\n"
+	if err := os.WriteFile(f.opts.EnvDumpFile, []byte(record), 0o600); err != nil {
+		return fmt.Errorf("testfixtures: record environment: %w", err)
 	}
 	return nil
 }

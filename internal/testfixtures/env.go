@@ -19,6 +19,7 @@ const (
 	EnvNegotiateOnce    = "MCPFIXTURE_NEGOTIATE_ONCE"
 	EnvStderr           = "MCPFIXTURE_STDERR"
 	EnvChildPIDFile     = "MCPFIXTURE_CHILD_PIDFILE"
+	EnvEnvDumpFile      = "MCPFIXTURE_ENV_DUMP_FILE"
 	EnvIgnoreStdinClose = "MCPFIXTURE_IGNORE_STDIN_CLOSE"
 	EnvExitOnCall       = "MCPFIXTURE_EXIT_ON_CALL"
 )
@@ -34,6 +35,7 @@ func FromEnv() (Mode, Options, error) {
 		NegotiateOnce:    os.Getenv(EnvNegotiateOnce) != "",
 		Stderr:           os.Getenv(EnvStderr),
 		ChildPIDFile:     os.Getenv(EnvChildPIDFile),
+		EnvDumpFile:      os.Getenv(EnvEnvDumpFile),
 		IgnoreStdinClose: os.Getenv(EnvIgnoreStdinClose) != "",
 		ExitOnCall:       os.Getenv(EnvExitOnCall) != "",
 	}, nil
@@ -46,6 +48,7 @@ func Env(mode Mode, opts Options) map[string]string {
 		EnvRevision:     opts.Revision,
 		EnvStderr:       opts.Stderr,
 		EnvChildPIDFile: opts.ChildPIDFile,
+		EnvEnvDumpFile:  opts.EnvDumpFile,
 	} {
 		if v != "" {
 			env[k] = v
