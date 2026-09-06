@@ -1,0 +1,23 @@
+{
+  "servers": [
+    {
+      "id": "filesystem",
+      "command": "mcp-server-filesystem",
+      "args": ["--root", "/srv/data"],
+      "env": {"FS_TOKEN": "s3cret", "FS_MODE": "ro"},
+      "era": "legacy"
+    },
+    {
+      "id": "search",
+      "command": "mcp-server-search",
+      "era": "modern"
+    }
+  ],
+  "limits": {
+    "maxProcesses": 32,
+    "maxProcessesPerSubject": 4,
+    "idleTtl": "90s",
+    "probeTimeout": "1500ms",
+    "maxHeaderBytes": 16384
+  }
+}
