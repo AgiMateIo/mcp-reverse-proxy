@@ -126,7 +126,12 @@ func (b *Backend) session(ctx context.Context) (backend.Connection, *Process, er
 	if b.closed {
 		return nil, nil, fmt.Errorf("backend %q is closed: %w", b.server.ID, backend.ErrNotConnected)
 	}
-	if b.proc != nil && !b.proc.Exited() {
+	// The connection is checked alongside the process because the two are
+	// forgotten at different moments: a request that lost its session clears
+	// the connection, while the exit is observed by another goroutine and may
+	// not have landed yet. Trusting the process alone would hand the next
+	// caller a nil connection.
+	if b.proc != nil && b.conn != nil && !b.proc.Exited() {
 		return b.conn, b.proc, nil
 	}
 	if b.proc != nil {
