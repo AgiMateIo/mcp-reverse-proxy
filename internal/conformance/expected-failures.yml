@@ -1,0 +1,82 @@
+# Conformance scenarios the gateway is not expected to pass, with the reason for
+# each. Anything failing outside this list fails the run.
+#
+# Most of these are not defects. The suite is written for a server that owns its
+# own features; the gateway owns none — it presents somebody else's under its own
+# namespace. A scenario that calls `test_audio_content` cannot find it here,
+# because here it is `everything__test_audio_content`, and prefixing is the
+# gateway's whole purpose rather than something to work around.
+#
+# One entry is a real gap, marked as such.
+
+server:
+  # Namespacing: the scenario addresses a tool, prompt or resource by the name
+  # the backend gave it, and the gateway exposes it under `<backend id>__<name>`
+  # (resources under `mcp-proxy://<backend id>/<encoded URI>`). The listing
+  # scenarios pass, because they only require the names to be there; these fail
+  # on the very first call by the unprefixed name.
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-error
+  - tools-call-with-progress
+  - json-schema-2020-12
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+
+  # Also namespacing, but reported as "untestable" rather than as a failure:
+  # every remaining check in this scenario needs one of the suite's diagnostic
+  # tools (test_missing_capability, test_streaming_elicitation,
+  # test_logging_tool) under its unprefixed name. Everything in the scenario
+  # that does not depend on a tool name passes.
+  - server-stateless
+
+  # A SHOULD the gateway does not meet: the resource-not-found error it returns
+  # for an unknown gateway URI does not echo the URI in error.data. Reported as
+  # a warning, and listed here because a warning still marks the scenario.
+  - sep-2164-resource-not-found
+
+  # Completion is not part of v1. The gateway advertises no completion
+  # capability and proxies no completion/complete.
+  - completion-complete
+
+  # Multi Round-Trip Requests and the InputRequiredResult it is built on are
+  # explicitly out of v1, together with elicitation, sampling and roots. The
+  # front end guarantees resultType "complete" on every result and never emits
+  # input_required, which is exactly what these scenarios look for the absence
+  # of. Supporting them would mean holding a frozen request between HTTP
+  # round trips, which is the one construct that would make the front end
+  # stateful.
+  - input-required-result-basic-elicitation
+  - input-required-result-basic-sampling
+  - input-required-result-basic-list-roots
+  - input-required-result-request-state
+  - input-required-result-multiple-input-requests
+  - input-required-result-multi-round
+  - input-required-result-missing-input-response
+  - input-required-result-non-tool-request
+  - input-required-result-result-type
+  - input-required-result-tampered-state
+  - input-required-result-capability-check
+  - input-required-result-ignore-extra-params
+
+  # A real gap, not an artifact of proxying.
+  #
+  # SEP-2243 requires a server to check `Mcp-Param-<Name>` headers against the
+  # matching arguments of a tools/call, refusing a mismatch, a missing header
+  # for a present argument, and an undecodable value. The SDK implements the
+  # check, but it needs the tool's input schema, which it finds by looking the
+  # tool up in the server it is serving. The gateway registers no tools with
+  # that server: its tools come from backends and are answered by middleware,
+  # so the lookup finds nothing and the headers go unchecked. Closing this
+  # means either registering the proxied tools per request or repeating the
+  # check in the gateway's own gate, which is a design decision rather than a
+  # fix. Three of the scenario's nine checks pass today.
+  - http-custom-header-server-validation

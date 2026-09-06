@@ -1,4 +1,4 @@
-.PHONY: build vet lint test test-race check
+.PHONY: build vet lint test test-race test-concurrency conformance check
 
 build:
 	go build ./...
@@ -15,5 +15,19 @@ test:
 # Every goroutine here owns a child process; races are not a style concern.
 test-race:
 	go test -race ./...
+
+# The packages where several goroutines touch the same state: the pool's
+# bookkeeping, the fan-in of backend changes, and the endpoint that drives both.
+# A single pass can miss an interleaving that only shows up occasionally, so
+# these run repeatedly rather than once.
+test-concurrency:
+	go test -race -count=5 ./internal/pool ./internal/aggregate ./internal/frontend
+
+# The official MCP conformance suite. It downloads a Node package and runs the
+# gateway against it, so it is a separate target rather than part of `check`.
+CONFORMANCE_VERSION ?= 0.2.0-alpha.10
+conformance:
+	MCP_CONFORMANCE=1 MCP_CONFORMANCE_VERSION=$(CONFORMANCE_VERSION) \
+		go test -count=1 -timeout 20m -run TestConformance ./internal/conformance
 
 check: build vet lint test-race
