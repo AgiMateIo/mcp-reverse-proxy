@@ -1,0 +1,54 @@
+schema: spec-driven
+
+context: |
+  Domain: a multi-tenant MCP gateway. One HTTP Streamable endpoint speaking MCP
+  revision 2026-07-28 fans requests out to several local stdio MCP servers, most
+  of which still speak the legacy 2025-11-25 revision.
+
+  Tech stack: Go, github.com/modelcontextprotocol/go-sdk (Tier 1 SDK, provides
+  both the modern server handler and the dual-era stdio client). go.mod floor is
+  1.25.0 to match the SDK. External OAuth 2.1 authorization server; the gateway
+  is only a resource server.
+
+  Code conventions live in AGENTS.md at the repository root (CLAUDE.md is a
+  symlink to it). Read it before proposing implementation detail. Enforced rules
+  live in .golangci.yml.
+
+  Spec files are written in English. Requirements use SHALL / MUST / MUST NOT.
+
+  Terminology, from the MCP specification itself: "modern" means revision
+  2026-07-28 and later, which carries protocol version and capabilities in
+  per-request _meta and has no sessions; "legacy" means 2025-11-25 and earlier,
+  which establishes a session with an initialize handshake. Use these terms
+  rather than inventing synonyms.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
