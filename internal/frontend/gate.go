@@ -40,6 +40,10 @@ const protocolVersionHeader = "Mcp-Protocol-Version"
 //     longer exists.
 //   - A POST with no version header at all, which skips the SDK's header
 //     validation entirely.
+//   - A request whose version header and body name different revisions. The
+//     SDK compares the method and the name headers against the body but not
+//     the version, and answering that with a version error would refuse a
+//     revision the client never asked for.
 //   - A version this gateway does not speak. The SDK accepts every revision it
 //     knows, including the legacy ones, and refuses anything else as plain
 //     text before the negotiation error is ever reached. The gateway speaks
@@ -69,22 +73,32 @@ func gate(next http.Handler) http.Handler {
 		// the handshake announces a legacy revision, so answering the version
 		// first would refuse it with a bare version error instead of the
 		// message that tells it what to do.
+		inHeader, inBody := r.Header.Get(protocolVersionHeader), declared(call)
 		switch {
 		case call.Method == "initialize":
 			// Naming the revisions is the whole value of this answer: it tells
 			// a legacy client what to do instead of handshaking.
-			writeError(w, call.ID, codeMethodNotFound, fmt.Sprintf(
+			writeError(w, http.StatusNotFound, call.ID, codeMethodNotFound, fmt.Sprintf(
 				"the initialize handshake was removed in revision %s; this endpoint speaks %s, "+
 					"carried per request in the %q field of _meta",
 				SupportedVersions[0], strings.Join(SupportedVersions, ", "), metaKeyProtocolVersion))
 		case slices.Contains(RemovedMethods, call.Method):
-			writeError(w, call.ID, codeMethodNotFound, fmt.Sprintf(
+			writeError(w, http.StatusNotFound, call.ID, codeMethodNotFound, fmt.Sprintf(
 				"%q was removed in revision %s", call.Method, SupportedVersions[0]))
-		case r.Header.Get(protocolVersionHeader) == "":
+		case inHeader == "":
 			// Without it the SDK skips its own header checks, so a request
 			// missing Mcp-Method would be served rather than refused.
-			writeError(w, call.ID, codeHeaderMismatch, fmt.Sprintf(
+			writeError(w, http.StatusBadRequest, call.ID, codeHeaderMismatch, fmt.Sprintf(
 				"the %s header is required on every request", protocolVersionHeader))
+		case inBody != "" && inBody != inHeader:
+			// A request that names two revisions has contradicted itself, and
+			// that is a different failure from naming one revision this
+			// endpoint does not speak: neither of the two is what the client
+			// asked for, so refusing one of them would be an answer to a
+			// request nobody made.
+			writeError(w, http.StatusBadRequest, call.ID, codeHeaderMismatch, fmt.Sprintf(
+				"the %s header says %q and the request body says %q",
+				protocolVersionHeader, inHeader, inBody))
 		case !slices.Contains(SupportedVersions, requested(call, r)):
 			writeVersionError(w, call.ID, requested(call, r))
 		default:
@@ -109,13 +123,24 @@ type call struct {
 // authoritative — that is where this revision carries it — and the header is
 // the fallback for a request that has no _meta at all.
 func requested(c call, r *http.Request) string {
-	if raw, ok := c.Params.Meta[metaKeyProtocolVersion]; ok {
-		var version string
-		if err := json.Unmarshal(raw, &version); err == nil && version != "" {
-			return version
-		}
+	if version := declared(c); version != "" {
+		return version
 	}
 	return r.Header.Get(protocolVersionHeader)
+}
+
+// declared is the revision the request body names, or the empty string if it
+// names none.
+func declared(c call) string {
+	raw, ok := c.Params.Meta[metaKeyProtocolVersion]
+	if !ok {
+		return ""
+	}
+	var version string
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return ""
+	}
+	return version
 }
 
 // writeVersionError refuses a revision, naming what is on offer so that the
@@ -148,11 +173,14 @@ func peek(body []byte) (call, bool) {
 	return c, true
 }
 
-// writeError answers with a JSON-RPC error. The status is 400 throughout:
-// these are malformed requests, not failures of a well-formed one.
-func writeError(w http.ResponseWriter, id json.RawMessage, code int, message string) {
+// writeError answers with a JSON-RPC error.
+//
+// The status carries the same distinction as the code: a method this revision
+// no longer has is 404, matching what a client is told about any method the
+// server does not implement, while a malformed request is 400.
+func writeError(w http.ResponseWriter, status int, id json.RawMessage, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,

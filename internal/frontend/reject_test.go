@@ -64,6 +64,14 @@ func TestMandatoryHeaders(t *testing.T) {
 			headers:  map[string]string{"Mcp-Protocol-Version": ""},
 			wantCode: codeHeaderMismatch,
 		},
+		{
+			// Two revisions named in one request is a contradiction, not a
+			// request for the one this endpoint happens not to speak.
+			name:     "Mcp-Protocol-Version contradicts the body",
+			method:   "tools/list",
+			headers:  map[string]string{metaVersionOverride: unsupportedRevision},
+			wantCode: codeHeaderMismatch,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,6 +113,9 @@ func TestInitializeIsRejectedActionably(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			res := post(t, url, "initialize", map[string]any{"protocolVersion": "2025-11-25"}, tt.headers)
+			if res.status != http.StatusNotFound {
+				t.Errorf("status = %d, want %d", res.status, http.StatusNotFound)
+			}
 			code, message, _ := res.rpcError(t)
 			if code != codeMethodNotFound {
 				t.Errorf("code = %d, want %d", code, codeMethodNotFound)
@@ -130,6 +141,12 @@ func TestRemovedMethodsAreRejected(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			t.Parallel()
 			res := post(t, url, method, nil, defaultHeaders())
+			// A method the endpoint does not have is 404, the same answer any
+			// unimplemented method gets: the code says which method, and the
+			// status says the client is asking for something that is not there.
+			if res.status != http.StatusNotFound {
+				t.Errorf("status = %d, want %d", res.status, http.StatusNotFound)
+			}
 			code, message, _ := res.rpcError(t)
 			if code != codeMethodNotFound {
 				t.Errorf("code = %d (%s), want %d", code, message, codeMethodNotFound)
