@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+
+	"github.com/agimate/mcp-reverse-proxy/internal/config"
 )
 
 // ErrNotConnected reports use of a [Connection] whose session is gone.
@@ -25,7 +27,8 @@ type Pipes struct {
 	// Stdout carries the backend's JSON-RPC output.
 	Stdout io.ReadCloser
 	// Stdin carries JSON-RPC input to the backend. Closing it is the primary
-	// stop signal for the process.
+	// stop signal for the process, which is why it belongs to whoever spawned
+	// the process and not to the session over it.
 	Stdin io.WriteCloser
 }
 
@@ -39,22 +42,39 @@ type Tool struct {
 	InputSchema json.RawMessage
 }
 
+// A ToolList is the outcome of a tools/list against a backend, in the shape of
+// revision 2026-07-28 whatever era produced it.
+type ToolList struct {
+	Tools      []Tool
+	ResultType string
+	Cache      Cache
+}
+
 // A ToolResult is the outcome of a tools/call against a backend.
 type ToolResult struct {
 	// Content is the raw JSON content array of the result.
-	Content json.RawMessage
-	IsError bool
+	Content    json.RawMessage
+	IsError    bool
+	ResultType string
 }
 
 // A Connection is a live MCP session with one stdio backend.
 type Connection interface {
-	ListTools(ctx context.Context) ([]Tool, error)
+	// Era reports the protocol era this session settled on. It is fixed for
+	// the life of the session, so no request repeats the probe.
+	Era() config.Era
+	// Revision reports the protocol revision the session settled on. Legacy is
+	// not one revision: a backend names its own in the handshake, and the
+	// gateway adopts it.
+	Revision() string
+	ListTools(ctx context.Context) (ToolList, error)
 	CallTool(ctx context.Context, name string, arguments json.RawMessage) (ToolResult, error)
-	// Close ends the session. It does not stop the backend process.
+	// Close ends the session. It does not stop the backend process: the pipes
+	// belong to whoever spawned it.
 	Close() error
 }
 
 // A Connector establishes sessions over the pipes of running backends.
 type Connector interface {
-	Connect(ctx context.Context, serverID string, p Pipes) (Connection, error)
+	Connect(ctx context.Context, server config.Server, p Pipes) (Connection, error)
 }
