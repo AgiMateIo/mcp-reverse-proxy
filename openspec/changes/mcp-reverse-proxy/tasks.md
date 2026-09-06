@@ -61,13 +61,13 @@
 
 ## 7. Process pool
 
-- [ ] 7.1 Key the pool by subject and resolved configuration fingerprint, and verify reuse for a repeat request from the same subject
-- [ ] 7.2 Verify two subjects with byte-identical configuration receive separate processes, asserting on distinct process identifiers
-- [ ] 7.3 Verify the same subject changing an env value receives a separate process rather than the cached one
-- [ ] 7.4 Implement idle TTL termination, and verify a process exits after the configured idle period
-- [ ] 7.5 Implement global limit with least-recently-used eviction, and verify the oldest idle process is terminated when the limit is reached
-- [ ] 7.6 Implement the per-subject limit rejecting requests beyond quota, and verify the error explicitly names quota exhaustion
-- [ ] 7.7 Add pool size and eviction metrics, and verify they are exposed and change under a load test
+- [x] 7.1 Key the pool by subject and resolved configuration fingerprint, and verify reuse for a repeat request from the same subject
+- [x] 7.2 Verify two subjects with byte-identical configuration receive separate processes, asserting on distinct process identifiers
+- [x] 7.3 Verify the same subject changing an env value receives a separate process rather than the cached one
+- [x] 7.4 Implement idle TTL termination, and verify a process exits after the configured idle period
+- [x] 7.5 Implement global limit with least-recently-used eviction, and verify the oldest idle process is terminated when the limit is reached
+- [x] 7.6 Implement the per-subject limit rejecting requests beyond quota, and verify the error explicitly names quota exhaustion
+- [x] 7.7 Add pool size and eviction metrics, and verify they are exposed and change under a load test
 
 ## 8. Header configuration and policy
 
