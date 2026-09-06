@@ -83,17 +83,17 @@
 
 ## 9. Aggregation
 
-- [ ] 9.1 Prefix tool, prompt, and prompt template names with the backend id and a double underscore, and verify a three-backend merged `tools/list`
-- [ ] 9.2 Fail configuration resolution on colliding resulting names, naming both backends and the conflict, and verify the error text
-- [ ] 9.3 Fail configuration resolution on duplicate backend identifiers and on prefixed names exceeding the length limit, and verify both
-- [ ] 9.4 Route `tools/call` by prefix, stripping it before dispatch, and verify the backend receives the unprefixed name
-- [ ] 9.5 Return "tool not found" for unknown prefixes and unprefixed names without broadcasting, and verify no fixture other than the intended one receives the call
-- [ ] 9.6 Implement the `mcp-proxy://` resource URI wrapping and unwrapping, and verify a list-then-read round trip preserves the original backend URI
-- [ ] 9.7 Return `-32602` for unparseable gateway URIs and unknown backends, and verify both
-- [ ] 9.8 Keep listing methods succeeding when a backend is unavailable, omitting its entries, logging the backend, and shortening `ttlMs`, and verify the reduced value
-- [ ] 9.9 Return an explicit unavailability error on calling a tool of a downed backend, and verify the error identifies the backend
-- [ ] 9.10 Return empty lists rather than an error when every backend is unavailable, and verify with all fixtures stopped
-- [ ] 9.11 Guarantee deterministic listing order across repeated calls, and verify two consecutive `tools/list` results are identical
+- [x] 9.1 Prefix tool, prompt, and prompt template names with the backend id and a double underscore, and verify a three-backend merged `tools/list`
+- [x] 9.2 Fail configuration resolution on colliding resulting names, naming both backends and the conflict, and verify the error text
+- [x] 9.3 Fail configuration resolution on duplicate backend identifiers and on prefixed names exceeding the length limit, and verify both
+- [x] 9.4 Route `tools/call` by prefix, stripping it before dispatch, and verify the backend receives the unprefixed name
+- [x] 9.5 Return "tool not found" for unknown prefixes and unprefixed names without broadcasting, and verify no fixture other than the intended one receives the call
+- [x] 9.6 Implement the `mcp-proxy://` resource URI wrapping and unwrapping, and verify a list-then-read round trip preserves the original backend URI
+- [x] 9.7 Return `-32602` for unparseable gateway URIs and unknown backends, and verify both
+- [x] 9.8 Keep listing methods succeeding when a backend is unavailable, omitting its entries, logging the backend, and shortening `ttlMs`, and verify the reduced value
+- [x] 9.9 Return an explicit unavailability error on calling a tool of a downed backend, and verify the error identifies the backend
+- [x] 9.10 Return empty lists rather than an error when every backend is unavailable, and verify with all fixtures stopped
+- [x] 9.11 Guarantee deterministic listing order across repeated calls, and verify two consecutive `tools/list` results are identical
 
 ## 10. Subscription fan-in
 

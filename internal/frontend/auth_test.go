@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agimate/mcp-reverse-proxy/internal/aggregate"
 	"github.com/agimate/mcp-reverse-proxy/internal/auth"
 	"github.com/agimate/mcp-reverse-proxy/internal/backend"
 	"github.com/agimate/mcp-reverse-proxy/internal/config"
@@ -96,7 +97,8 @@ func serveGuarded(t *testing.T, key *rsa.PrivateKey, opts testfixtures.Options) 
 		t.Fatalf("MetadataURL: %v", err)
 	}
 	guard := auth.Require(verifier, metadataURL, nil)
-	srv := httptest.NewServer(guard(frontend.NewEndpoint("test", b, nil).Handler()))
+	g := aggregate.New(map[string]aggregate.Source{server.ID: b}, 0, nil)
+	srv := httptest.NewServer(guard(frontend.NewEndpoint("test", g, nil).Handler()))
 	t.Cleanup(srv.Close)
 	return srv.URL
 }

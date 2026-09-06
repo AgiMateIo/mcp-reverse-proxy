@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agimate/mcp-reverse-proxy/internal/aggregate"
 	"github.com/agimate/mcp-reverse-proxy/internal/backend"
 	"github.com/agimate/mcp-reverse-proxy/internal/config"
 	"github.com/agimate/mcp-reverse-proxy/internal/frontend"
@@ -44,7 +45,12 @@ func serve(t *testing.T, mode testfixtures.Mode) string {
 	b := pool.NewBackend(server, backend.NewConnector("test", probeTimeout, nil), pool.DefaultStopPolicy, nil)
 	t.Cleanup(func() { _ = b.Close(context.WithoutCancel(t.Context())) })
 
-	http := httptest.NewServer(frontend.NewEndpoint("test", b, nil).Handler())
+	// Even a single backend is reached through the aggregator: it is what
+	// namespaces the names and routes the calls, and a front end that bypassed
+	// it for one backend would be a different front end from the one that
+	// serves several.
+	g := aggregate.New(map[string]aggregate.Source{server.ID: b}, 0, nil)
+	http := httptest.NewServer(frontend.NewEndpoint("test", g, nil).Handler())
 	t.Cleanup(http.Close)
 	return http.URL
 }
@@ -74,8 +80,9 @@ func TestToolsListOverHTTP(t *testing.T) {
 			if len(names) == 0 {
 				t.Fatal("the gateway returned no tools")
 			}
-			if !slices.Contains(names, "echo") {
-				t.Errorf("tools = %v, want the fixture's own tools", names)
+			want := aggregate.Qualify(string(tt.mode), "echo")
+			if !slices.Contains(names, want) {
+				t.Errorf("tools = %v, want it to hold %q", names, want)
 			}
 
 			// Task 5.7 and 5.8, on the same result.
@@ -97,7 +104,7 @@ func TestToolCallOverHTTP(t *testing.T) {
 	t.Parallel()
 	session := connect(t, serve(t, testfixtures.ModeLegacy))
 	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{
-		Name:      "echo",
+		Name:      aggregate.Qualify(string(testfixtures.ModeLegacy), "echo"),
 		Arguments: json.RawMessage(`{"text":"hello"}`),
 	})
 	if err != nil {

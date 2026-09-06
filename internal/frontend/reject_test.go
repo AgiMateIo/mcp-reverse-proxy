@@ -14,6 +14,7 @@ const (
 	codeHeaderMismatch  = -32020
 	codeUnsupportedVer  = -32022
 	codeMethodNotFound  = -32601
+	codeInvalidParams   = -32602
 	unsupportedRevision = "1999-01-01"
 )
 

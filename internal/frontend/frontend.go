@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/agimate/mcp-reverse-proxy/internal/aggregate"
 	"github.com/agimate/mcp-reverse-proxy/internal/backend"
 )
 
@@ -29,12 +30,17 @@ var RemovedMethods = []string{
 	"resources/unsubscribe",
 }
 
-// A Backend is one stdio server as the endpoint uses it. The endpoint depends
-// on this rather than on the pool, so that what serves a request can be a live
-// child process or a stub.
+// A Backend is the aggregated surface as the endpoint uses it: one listing over
+// every stdio server, and dispatch by the namespaced name a client saw.
+//
+// The endpoint depends on this rather than on the aggregator or the pool, so
+// that what serves a request can be live child processes or a stub. Names and
+// URIs crossing this interface are the gateway's, never a backend's own.
 type Backend interface {
-	ListTools(ctx context.Context) (backend.ToolList, error)
+	Surface(ctx context.Context) (aggregate.Surface, error)
 	CallTool(ctx context.Context, name string, arguments json.RawMessage) (backend.ToolResult, error)
+	GetPrompt(ctx context.Context, name string, arguments map[string]string) (backend.PromptResult, error)
+	ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error)
 }
 
 // An Endpoint is the gateway's public MCP surface.
