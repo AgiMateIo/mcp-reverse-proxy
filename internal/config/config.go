@@ -87,6 +87,18 @@ type File struct {
 	// arrives in the x-mcp-config header.
 	Servers []Server `json:"servers"`
 	Limits  Limits   `json:"limits,omitempty"`
+	// Policy bounds what the x-mcp-config header may do. Its zero value is
+	// the closed one: a deployment opts into header configuration rather than
+	// discovering it is on.
+	Policy PolicyConfig `json:"policy,omitempty"`
+}
+
+// PolicyConfig is the deployment's stance on header configuration, carried as
+// plain strings because the package that interprets them depends on this one.
+type PolicyConfig struct {
+	Mode             string   `json:"mode,omitempty"`
+	CommandAllowlist []string `json:"commandAllowlist,omitempty"`
+	EnvDenylist      []string `json:"envDenylist,omitempty"`
 }
 
 // Load reads and validates the base configuration at path.
@@ -156,28 +168,8 @@ func (f *File) applyDefaults() {
 // validate reports the first problem, naming the file and where in it the
 // problem sits.
 func (f *File) validate(path string) error {
-	seen := make(map[string]int, len(f.Servers))
-	for i, s := range f.Servers {
-		where := fmt.Sprintf("servers[%d]", i)
-		switch {
-		case s.ID == "":
-			return f.problem(path, where, "missing id")
-		case s.Command == "":
-			return f.problem(path, fmt.Sprintf("servers[%d] %q", i, s.ID), "missing command")
-		case !slices.Contains(eras, s.Era):
-			return f.problem(path, fmt.Sprintf("servers[%d] %q", i, s.ID),
-				fmt.Sprintf("era %q is not one of %v", s.Era, eras))
-		}
-		if first, dup := seen[s.ID]; dup {
-			return f.problem(path, fmt.Sprintf("servers[%d]", i),
-				fmt.Sprintf("id %q duplicates servers[%d]", s.ID, first))
-		}
-		seen[s.ID] = i
-		for _, k := range s.Env.Keys() {
-			if k == "" {
-				return f.problem(path, fmt.Sprintf("servers[%d] %q", i, s.ID), "env has an empty key")
-			}
-		}
+	if err := validateServers(f.Servers); err != nil {
+		return fmt.Errorf("config %s: %w", path, err)
 	}
 	for _, l := range []struct {
 		field string
@@ -197,6 +189,34 @@ func (f *File) validate(path string) error {
 		return f.problem(path, "limits",
 			fmt.Sprintf("maxProcessesPerSubject (%d) exceeds maxProcesses (%d)",
 				f.Limits.MaxProcessesPerSubject, f.Limits.MaxProcesses))
+	}
+	return nil
+}
+
+// validateServers checks a server set from either source. The header can
+// produce a duplicate id or an empty command exactly as a file can, so both go
+// through this.
+func validateServers(servers []Server) error {
+	seen := make(map[string]int, len(servers))
+	for i, s := range servers {
+		named := fmt.Sprintf("servers[%d] %q", i, s.ID)
+		switch {
+		case s.ID == "":
+			return fmt.Errorf("servers[%d]: missing id: %w", i, ErrInvalid)
+		case s.Command == "":
+			return fmt.Errorf("%s: missing command: %w", named, ErrInvalid)
+		case !slices.Contains(eras, s.Era):
+			return fmt.Errorf("%s: era %q is not one of %v: %w", named, s.Era, eras, ErrInvalid)
+		}
+		if first, dup := seen[s.ID]; dup {
+			return fmt.Errorf("servers[%d]: id %q duplicates servers[%d]: %w", i, s.ID, first, ErrInvalid)
+		}
+		seen[s.ID] = i
+		for _, k := range s.Env.Keys() {
+			if k == "" {
+				return fmt.Errorf("%s: env has an empty key: %w", named, ErrInvalid)
+			}
+		}
 	}
 	return nil
 }

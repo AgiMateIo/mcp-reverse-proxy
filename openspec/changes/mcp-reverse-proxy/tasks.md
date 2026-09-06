@@ -71,15 +71,15 @@
 
 ## 8. Header configuration and policy
 
-- [ ] 8.1 Parse the `x-mcp-config` header as JSON, returning `400` on malformed input without echoing the value, and verify the response body contains no header content
-- [ ] 8.2 Enforce a header size limit returning `400` naming the exceeded limit, and verify with an oversized header
-- [ ] 8.3 Implement merge semantics: key-wise `env` merge, wholesale replacement of other fields, and verify all three merge scenarios from the spec
-- [ ] 8.4 Implement the four policy modes with `off` as the default, and verify each mode permits and rejects exactly what the spec states
-- [ ] 8.5 Verify `off` rejects a present header with an error and no `insufficient_scope` challenge, while a request without the header is served normally
-- [ ] 8.6 Gate elevated modes on token scopes returning `403` with `insufficient_scope` and the complete required scope set in one challenge, and verify no incremental challenging occurs
-- [ ] 8.7 Enforce the command allowlist and env key denylist regardless of mode, and verify `define-new` still rejects a disallowed command
-- [ ] 8.8 Fail startup when `define-new` is enabled without a command allowlist, and verify the configuration error
-- [ ] 8.9 Redact the header from logs, errors, and telemetry, and verify by scanning captured log output during a policy rejection test
+- [x] 8.1 Parse the `x-mcp-config` header as JSON, returning `400` on malformed input without echoing the value, and verify the response body contains no header content
+- [x] 8.2 Enforce a header size limit returning `400` naming the exceeded limit, and verify with an oversized header
+- [x] 8.3 Implement merge semantics: key-wise `env` merge, wholesale replacement of other fields, and verify all three merge scenarios from the spec
+- [x] 8.4 Implement the four policy modes with `off` as the default, and verify each mode permits and rejects exactly what the spec states
+- [x] 8.5 Verify `off` rejects a present header with an error and no `insufficient_scope` challenge, while a request without the header is served normally
+- [x] 8.6 Gate elevated modes on token scopes returning `403` with `insufficient_scope` and the complete required scope set in one challenge, and verify no incremental challenging occurs
+- [x] 8.7 Enforce the command allowlist and env key denylist regardless of mode, and verify `define-new` still rejects a disallowed command
+- [x] 8.8 Fail startup when `define-new` is enabled without a command allowlist, and verify the configuration error
+- [x] 8.9 Redact the header from logs, errors, and telemetry, and verify by scanning captured log output during a policy rejection test
 
 ## 9. Aggregation
 
