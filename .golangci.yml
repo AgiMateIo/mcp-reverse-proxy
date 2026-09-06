@@ -1,0 +1,48 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    # Errors must be comparable with errors.Is / errors.As, never by string.
+    - errorlint
+    # Every blocking call carries a context; these two catch the ones that do not.
+    - contextcheck
+    - noctx
+    - bodyclose
+    # G204 flags subprocess execution with variable arguments — that is the
+    # `define-new` policy mode. Keep it noisy: each suppression must be argued.
+    - gosec
+    # SDK types stay inside internal/backend and internal/frontend: the library
+    # is young, and a version bump must not ripple through the codebase.
+    - depguard
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+
+    depguard:
+      rules:
+        sdk-isolation:
+          list-mode: lax
+          files:
+            - "!**/internal/backend/*.go"
+            - "!**/internal/frontend/*.go"
+          deny:
+            - pkg: github.com/modelcontextprotocol/go-sdk
+              desc: wrap the SDK behind the interfaces in internal/backend and internal/frontend
+
+  exclusions:
+    rules:
+      # Fixtures deliberately spawn processes and craft malformed input.
+      - path: internal/testfixtures/
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
