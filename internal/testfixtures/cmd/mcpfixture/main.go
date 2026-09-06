@@ -32,7 +32,10 @@ func run() error {
 	// deliberately ignores the stdin close.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	return testfixtures.Run(ctx, testfixtures.Mode(os.Args[1]), os.Stdin, os.Stdout)
+	// Options come from the environment, as they do for a fixture the gateway
+	// spawns: the mode on the command line only overrides MCPFIXTURE_MODE.
+	_, opts, _ := testfixtures.FromEnv()
+	return testfixtures.RunWith(ctx, testfixtures.Mode(os.Args[1]), opts, os.Stdin, os.Stdout)
 }
 
 func joinModes() string {

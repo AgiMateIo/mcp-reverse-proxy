@@ -17,6 +17,20 @@ const (
 	methodSamplingCreateMessage = "sampling/createMessage"
 )
 
+// codeUnsupportedProtocolVersion is the error a modern backend returns when it
+// does not speak the revision the client asked for. It carries the revisions it
+// does speak, so the client can retry rather than give up on the modern era.
+const codeUnsupportedProtocolVersion = -32022
+
+// unsupportedVersionData is the data of that error.
+type unsupportedVersionData struct {
+	Supported []string `json:"supported"`
+}
+
+// exitToolName is the tool that terminates a fixture instead of answering,
+// under Options.ExitOnCall.
+const exitToolName = "exit"
+
 // ttlMs is the cache hint modern-era fixture results carry.
 const ttlMs = 60_000
 
@@ -72,6 +86,15 @@ func (w *writer) result(id json.RawMessage, value any) error {
 // fail answers a request with an error.
 func (w *writer) fail(id json.RawMessage, code int, msg string) error {
 	return w.send(message{ID: id, Error: &wireError{Code: code, Message: msg}})
+}
+
+// failData answers a request with an error carrying structured data.
+func (w *writer) failData(id json.RawMessage, code int, msg string, data any) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("testfixtures: encode error data: %w", err)
+	}
+	return w.send(message{ID: id, Error: &wireError{Code: code, Message: msg, Data: raw}})
 }
 
 // request issues a server-to-client request.
@@ -167,6 +190,15 @@ type createMessageParams struct {
 type samplingMessage struct {
 	Role    string  `json:"role"`
 	Content content `json:"content"`
+}
+
+// exitTool is served only under Options.ExitOnCall, so that enabling it does
+// not change the surface every other fixture presents.
+var exitTool = tool{
+	Name:        exitToolName,
+	Title:       "Exit",
+	Description: "Terminates the fixture without answering.",
+	InputSchema: json.RawMessage(`{"type":"object"}`),
 }
 
 // fixtureTools is the tool set every fixture serves. Two entries are enough to

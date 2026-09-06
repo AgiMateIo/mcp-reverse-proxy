@@ -23,7 +23,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 // A Mode selects the behavior of a fixture server.
@@ -80,15 +84,59 @@ const (
 // exists so a runaway peer cannot grow the read buffer without bound.
 const maxLine = 1 << 20
 
-// Run serves one fixture session, reading newline-delimited JSON-RPC from stdin
-// and writing replies to stdout. It returns when stdin reaches EOF: closing
+// Options tune a fixture beyond its mode. The zero value is what [Run] uses.
+type Options struct {
+	// Revision is the protocol revision a legacy handshake answers with.
+	// Empty means [versionLegacy]. "Legacy" is not one revision: a backend may
+	// name any published revision older than 2026-07-28, and the gateway is
+	// expected to adopt the one it names.
+	Revision string
+	// NegotiateOnce makes the first server/discover fail with -32022 naming a
+	// mutually supported version, and the retry succeed. It is the only way to
+	// exercise that retry path against an SDK that knows one modern revision.
+	NegotiateOnce bool
+	// Stderr, when non-empty, is written to the fixture's standard error
+	// before it serves anything. Writing there is not a failure, and the
+	// fixture goes on serving.
+	Stderr string
+	// ChildPIDFile, when non-empty, makes the fixture spawn a long-lived
+	// descendant and write its process id to that path. Terminating the
+	// fixture must terminate the descendant too.
+	ChildPIDFile string
+	// IgnoreStdinClose makes the fixture keep running after its standard input
+	// is closed, which is what forces the escalation to signals.
+	IgnoreStdinClose bool
+	// ExitOnCall makes a call to the "exit" tool terminate the fixture without
+	// answering, which is how a request in flight when its backend dies is
+	// staged. It calls os.Exit, so it is only meaningful — and only safe — in
+	// a fixture running as its own process.
+	ExitOnCall bool
+}
+
+// Run serves one fixture session with default options, reading
+// newline-delimited JSON-RPC from stdin and writing replies to stdout. It returns when stdin reaches EOF: closing
 // stdin is the gateway's stop signal, and the only one a fixture blocked on a
 // silent peer can observe. ctx is consulted between frames, so cancelling it
 // stops a fixture that is being talked to but not one that is idle.
 func Run(ctx context.Context, mode Mode, stdin io.Reader, stdout io.Writer) error {
+	return RunWith(ctx, mode, Options{}, stdin, stdout)
+}
+
+// RunWith serves one fixture session with the given options. stderr may be nil
+// when [Options.Stderr] is empty.
+func RunWith(ctx context.Context, mode Mode, opts Options, stdin io.Reader, stdout io.Writer) error {
 	f, err := newFixture(mode, stdout)
 	if err != nil {
 		return err
+	}
+	f.opts = opts
+	if opts.Revision == "" {
+		f.opts.Revision = versionLegacy
+	}
+	if opts.ChildPIDFile != "" {
+		if err := f.spawnChild(); err != nil {
+			return err
+		}
 	}
 	return f.serve(ctx, stdin)
 }
@@ -96,12 +144,16 @@ func Run(ctx context.Context, mode Mode, stdin io.Reader, stdout io.Writer) erro
 // A fixture is one running fixture session.
 type fixture struct {
 	mode Mode
+	opts Options
 	out  *writer
 	// initialized reports whether the legacy handshake has completed. Modes
 	// with no handshake leave it false and never consult it.
 	initialized bool
 	// nextID numbers the server-to-client requests that ModeMisbehaving sends.
 	nextID int
+	// negotiated records that the version retry of Options.NegotiateOnce has
+	// already been demanded once.
+	negotiated bool
 }
 
 func newFixture(mode Mode, stdout io.Writer) (*fixture, error) {
@@ -120,6 +172,10 @@ var serverNames = map[Mode]string{
 }
 
 func (f *fixture) serve(ctx context.Context, stdin io.Reader) error {
+	if f.opts.Stderr != "" {
+		// Diagnostics on stderr are ordinary behavior, not a failure.
+		fmt.Fprintln(os.Stderr, f.opts.Stderr)
+	}
 	scan := bufio.NewScanner(stdin)
 	scan.Buffer(make([]byte, 0, 4096), maxLine)
 	for scan.Scan() {
@@ -146,6 +202,10 @@ func (f *fixture) serve(ctx context.Context, stdin io.Reader) error {
 	if err := scan.Err(); err != nil {
 		return fmt.Errorf("testfixtures: read stdin: %w", err)
 	}
+	if f.opts.IgnoreStdinClose {
+		// Ignoring the stop signal is the point: the gateway must escalate.
+		<-ctx.Done()
+	}
 	return ctx.Err()
 }
 
@@ -170,6 +230,12 @@ func (f *fixture) dispatch(msg *message) error {
 func (f *fixture) dispatchModern(msg *message) error {
 	switch msg.Method {
 	case methodDiscover:
+		if f.opts.NegotiateOnce && !f.negotiated {
+			f.negotiated = true
+			return f.out.failData(msg.ID, codeUnsupportedProtocolVersion,
+				"unsupported protocol version",
+				unsupportedVersionData{Supported: []string{versionModern}})
+		}
 		return f.out.result(msg.ID, discoverResult{
 			ResultType:        "complete",
 			SupportedVersions: []string{versionModern},
@@ -183,7 +249,7 @@ func (f *fixture) dispatchModern(msg *message) error {
 	case methodToolsList:
 		return f.out.result(msg.ID, modernListToolsResult{
 			ResultType: "complete",
-			Tools:      fixtureTools,
+			Tools:      f.tools(),
 			TTLMs:      ttlMs,
 			CacheScope: "private",
 		})
@@ -203,7 +269,7 @@ func (f *fixture) dispatchLegacy(msg *message) error {
 	if msg.Method == methodInitialize {
 		f.initialized = true
 		return f.out.result(msg.ID, initializeResult{
-			ProtocolVersion: versionLegacy,
+			ProtocolVersion: f.opts.Revision,
 			Capabilities:    serverCapabilities(),
 			ServerInfo:      f.implementation(),
 		})
@@ -220,7 +286,7 @@ func (f *fixture) dispatchLegacy(msg *message) error {
 	case methodToolsList:
 		// Deliberately the legacy shape: no resultType, no ttlMs, no
 		// cacheScope. Normalization has to supply them.
-		return f.out.result(msg.ID, legacyListToolsResult{Tools: fixtureTools})
+		return f.out.result(msg.ID, legacyListToolsResult{Tools: f.tools()})
 	case methodToolsCall:
 		return f.callTool(msg, false)
 	case methodResourcesRead:
@@ -239,6 +305,9 @@ func (f *fixture) callTool(msg *message, modern bool) error {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
 			return fmt.Errorf("testfixtures: decode tools/call params: %w", err)
 		}
+	}
+	if f.opts.ExitOnCall && params.Name == exitToolName {
+		os.Exit(1)
 	}
 	res := callToolResult{
 		Content: []content{{
@@ -278,6 +347,39 @@ func (f *fixture) unknownMethod(msg *message) error {
 	return f.out.fail(msg.ID, codeMethodNotFound, "method not found: "+msg.Method)
 }
 
+// tools is the tool set this fixture serves.
+func (f *fixture) tools() []tool {
+	if !f.opts.ExitOnCall {
+		return fixtureTools
+	}
+	return append(append([]tool{}, fixtureTools...), exitTool)
+}
+
 func (f *fixture) implementation() implementation {
 	return implementation{Name: serverNames[f.mode], Version: "1.0.0"}
+}
+
+// spawnChild starts a long-lived descendant, so that a shutdown test can show
+// the gateway's escalation reaches the whole process tree and not only the
+// process it started.
+//
+// This is the one place outside the gateway's own process constructor that
+// calls exec.Command, and it exists because the failure it reproduces — an
+// orphaned grandchild — cannot be staged any other way.
+func (f *fixture) spawnChild() error {
+	// noctx: deliberately not CommandContext. If the fixture's own context
+	// killed the child, a shutdown test would pass without the gateway ever
+	// signalling the process group, which is the thing under test.
+	child := exec.Command("/bin/sh", "-c", "sleep 600") //nolint:noctx // see above
+	// The child joins the fixture's process group, which is the gateway's
+	// process group for the backend. Nothing here creates a new one.
+	child.SysProcAttr = &syscall.SysProcAttr{}
+	if err := child.Start(); err != nil {
+		return fmt.Errorf("testfixtures: spawn child: %w", err)
+	}
+	pid := strconv.Itoa(child.Process.Pid)
+	if err := os.WriteFile(f.opts.ChildPIDFile, []byte(pid), 0o600); err != nil {
+		return fmt.Errorf("testfixtures: record child pid: %w", err)
+	}
+	return nil
 }
