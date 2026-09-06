@@ -54,17 +54,21 @@ func (e *SDKEndpoint) server(*http.Request) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: implName, Version: e.version}, &mcp.ServerOptions{
 		// The gateway advertises none of the deprecated capabilities, so no
 		// client asks for a feature it would have to refuse.
+		// ListChanged on all three: a subscription is only agreed to for a
+		// kind the server says can change, so without these the endpoint would
+		// accept subscriptions/listen and then agree to nothing, closing the
+		// stream at once instead of holding it open.
 		Capabilities: &mcp.ServerCapabilities{
-			Tools:     &mcp.ToolCapabilities{},
-			Prompts:   &mcp.PromptCapabilities{},
-			Resources: &mcp.ResourceCapabilities{},
+			Tools:     &mcp.ToolCapabilities{ListChanged: true},
+			Prompts:   &mcp.PromptCapabilities{ListChanged: true},
+			Resources: &mcp.ResourceCapabilities{ListChanged: true},
 		},
 		Logger: e.logger,
 	})
 	// Order matters: shaping is added second so that it wraps the serving
 	// middleware, and every result it produces carries the envelope this
 	// revision requires.
-	s.AddReceivingMiddleware(serve(e.backend))
+	s.AddReceivingMiddleware(serve(e.backend), fanIn(s, e.backend, e.logger))
 	s.AddReceivingMiddleware(shapeResults)
 	return s
 }

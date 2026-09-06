@@ -125,6 +125,29 @@ type ResourceContents struct {
 	Cache      Cache
 }
 
+// A ChangeKind names what changed on a backend.
+//
+// The revision has one notification per kind and no payload beyond that, so a
+// change is a signal to list again rather than a description of a difference.
+type ChangeKind string
+
+const (
+	// ChangeTools reports that the backend's tool list changed.
+	ChangeTools ChangeKind = "tools"
+	// ChangePrompts reports that its prompt list changed.
+	ChangePrompts ChangeKind = "prompts"
+	// ChangeResources reports that its resource list changed.
+	ChangeResources ChangeKind = "resources"
+)
+
+// A Change is one backend saying that part of its surface is no longer what it
+// listed.
+type Change struct {
+	// ServerID names the backend the change came from.
+	ServerID string
+	Kind     ChangeKind
+}
+
 // A Connection is a live MCP session with one stdio backend.
 type Connection interface {
 	// Era reports the protocol era this session settled on. It is fixed for
@@ -150,5 +173,12 @@ type Connection interface {
 
 // A Connector establishes sessions over the pipes of running backends.
 type Connector interface {
-	Connect(ctx context.Context, server config.Server, p Pipes) (Connection, error)
+	// Connect opens a session. Changes the backend reports are handed to
+	// notify, which may be nil when nobody is listening.
+	//
+	// The callback is per session rather than per connector because a backend
+	// is one subject's process: a connector-wide callback could not tell one
+	// subject's copy of a server from another's, and would report one
+	// subject's change to everybody.
+	Connect(ctx context.Context, server config.Server, p Pipes, notify func(Change)) (Connection, error)
 }

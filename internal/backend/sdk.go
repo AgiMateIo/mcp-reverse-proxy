@@ -35,7 +35,7 @@ func NewConnector(version string, probeTimeout time.Duration, logger *slog.Logge
 var _ Connector = (*SDKConnector)(nil)
 
 // Connect opens an MCP session over p, applying the server's era policy.
-func (c *SDKConnector) Connect(ctx context.Context, server config.Server, p Pipes) (Connection, error) {
+func (c *SDKConnector) Connect(ctx context.Context, server config.Server, p Pipes, notify func(Change)) (Connection, error) {
 	transport := &eraTransport{
 		// Stdin belongs to whoever spawned the process: closing it is the stop
 		// signal, and a session ending must not stop a process the pool still
@@ -55,6 +55,20 @@ func (c *SDKConnector) Connect(ctx context.Context, server config.Server, p Pipe
 		// carry, and one that sends them anyway is refused by the transport.
 		Capabilities: &mcp.ClientCapabilities{},
 		Logger:       c.logger,
+		// One handler per kind, and the same handler whichever era the backend
+		// speaks: a modern backend delivers these over the subscriptions/listen
+		// stream the SDK opens during Connect, a legacy one over the ordinary
+		// notification channel, and the client folds both into this call. That
+		// fold is what normalizing a legacy notification amounts to.
+		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+			report(notify, server.ID, ChangeTools)
+		},
+		PromptListChangedHandler: func(context.Context, *mcp.PromptListChangedRequest) {
+			report(notify, server.ID, ChangePrompts)
+		},
+		ResourceListChangedHandler: func(context.Context, *mcp.ResourceListChangedRequest) {
+			report(notify, server.ID, ChangeResources)
+		},
 	})
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
@@ -77,6 +91,14 @@ func (c *SDKConnector) Connect(ctx context.Context, server config.Server, p Pipe
 		revision = res.ProtocolVersion
 	}
 	return &sdkConnection{serverID: server.ID, era: era, revision: revision, session: session}, nil
+}
+
+// report hands one change on, if anybody is listening.
+func report(notify func(Change), serverID string, kind ChangeKind) {
+	if notify == nil {
+		return
+	}
+	notify(Change{ServerID: serverID, Kind: kind})
 }
 
 // nopCloser keeps the SDK's connection from closing a pipe it does not own.

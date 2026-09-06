@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agimate/mcp-reverse-proxy/internal/backend"
@@ -45,6 +46,8 @@ type Gateway struct {
 	router  *Router
 	timeout time.Duration
 	logger  *slog.Logger
+	// listeners counts the open change streams.
+	listeners atomic.Int64
 }
 
 // New returns a gateway over the backends of one resolved configuration,

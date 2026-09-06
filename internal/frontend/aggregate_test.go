@@ -49,6 +49,21 @@ const down = testfixtures.Mode("down")
 // identifier each is namespaced under.
 func serveAll(t *testing.T, backends map[string]testfixtures.Mode) (string, *logs, map[string]*pool.Backend) {
 	t.Helper()
+	url, captured, started, _ := serveWith(t, backends, testfixtures.Options{})
+	return url, captured, started
+}
+
+// serveAnnouncing puts the gateway in front of backends that can be made to
+// announce a change, and hands back the aggregator so a test can see what it
+// still holds.
+func serveAnnouncing(t *testing.T, backends map[string]testfixtures.Mode) (string, *logs, *aggregate.Gateway) {
+	t.Helper()
+	url, captured, _, g := serveWith(t, backends, testfixtures.Options{AnnounceChanges: true})
+	return url, captured, g
+}
+
+func serveWith(t *testing.T, backends map[string]testfixtures.Mode, opts testfixtures.Options) (string, *logs, map[string]*pool.Backend, *aggregate.Gateway) {
+	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatalf("locate the test binary: %v", err)
@@ -64,7 +79,7 @@ func serveAll(t *testing.T, backends map[string]testfixtures.Mode) (string, *log
 			server.Command = "/nonexistent/backend"
 		} else {
 			env := config.Env{}
-			for k, v := range testfixtures.Env(mode, testfixtures.Options{}) {
+			for k, v := range testfixtures.Env(mode, opts) {
 				env[k] = config.Secret(v)
 			}
 			server.Env = env
@@ -78,7 +93,7 @@ func serveAll(t *testing.T, backends map[string]testfixtures.Mode) (string, *log
 	g := aggregate.New(sources, 0, logger)
 	srv := httptest.NewServer(frontend.NewEndpoint("test", g, logger).Handler())
 	t.Cleanup(srv.Close)
-	return srv.URL, captured, started
+	return srv.URL, captured, started, g
 }
 
 func toolNames(res *mcp.ListToolsResult) []string {

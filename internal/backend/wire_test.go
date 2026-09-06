@@ -36,6 +36,43 @@ type session struct {
 	conn backend.Connection
 	tee  *tee
 	logs *bytes.Buffer
+	// changes records what the backend reported, in order, so a test can show
+	// a notification arrived rather than infer it.
+	changes *changeLog
+}
+
+// A changeLog collects the changes a backend reported. The callback runs on the
+// connection's reading goroutine, so it is guarded.
+type changeLog struct {
+	mu   sync.Mutex
+	seen []backend.Change
+	// signal is closed-on-append, so a test can wait for one without sleeping.
+	signal chan struct{}
+}
+
+func newChangeLog() *changeLog { return &changeLog{signal: make(chan struct{}, 8)} }
+
+func (l *changeLog) add(c backend.Change) {
+	l.mu.Lock()
+	l.seen = append(l.seen, c)
+	l.mu.Unlock()
+	select {
+	case l.signal <- struct{}{}:
+	default:
+	}
+}
+
+// await waits for one more change than it has already seen, or fails.
+func (l *changeLog) await(t *testing.T) backend.Change {
+	t.Helper()
+	select {
+	case <-l.signal:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no change arrived from the backend")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.seen[len(l.seen)-1]
 }
 
 // dial starts a fixture with default options and connects the gateway to it.
@@ -59,8 +96,9 @@ func dialWith(t *testing.T, mode testfixtures.Mode, opts testfixtures.Options, s
 
 	logs := &bytes.Buffer{}
 	logger := slog.New(slog.NewTextHandler(logs, nil))
+	changes := newChangeLog()
 	conn, err := backend.NewConnector("test", probeTimeout, logger).
-		Connect(t.Context(), server, backend.Pipes{Stdout: outR, Stdin: stdin})
+		Connect(t.Context(), server, backend.Pipes{Stdout: outR, Stdin: stdin}, changes.add)
 
 	t.Cleanup(func() {
 		if conn != nil {
@@ -71,7 +109,7 @@ func dialWith(t *testing.T, mode testfixtures.Mode, opts testfixtures.Options, s
 		_ = stdin.Close()
 		wg.Wait()
 	})
-	return &session{conn: conn, tee: stdin, logs: logs}, err
+	return &session{conn: conn, tee: stdin, logs: logs, changes: changes}, err
 }
 
 // mustDial fails the test if the connection could not be established.

@@ -64,6 +64,10 @@ func (f *fakeBackend) ReadResource(context.Context, string) (backend.ResourceCon
 	return backend.ResourceContents{}, nil
 }
 
+// Subscribe is part of the surface the pool forwards; the pool's own tests are
+// about process lifetime and never publish anything.
+func (f *fakeBackend) Subscribe(func(backend.Change)) func() { return func() {} }
+
 func (f *fakeBackend) PID() int { return f.pid }
 
 func (f *fakeBackend) Close(context.Context) error {

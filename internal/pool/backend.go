@@ -29,6 +29,46 @@ type Backend struct {
 	proc   *Process
 	conn   backend.Connection
 	closed bool
+	// listenMu guards the listeners, and is deliberately not b.mu: publishing
+	// runs on the connection's reading goroutine, while b.mu is held across
+	// connector.Connect. A backend that announced a change before answering
+	// the handshake would otherwise block its own reader behind the very call
+	// that is waiting to be read.
+	listenMu  sync.Mutex
+	listeners map[int]func(backend.Change)
+	nextID    int
+}
+
+// Subscribe registers f to receive this backend's changes and returns the
+// release. The callback runs on the connection's reading goroutine, so it must
+// not block: a listener that blocks here stops the backend being read.
+func (b *Backend) Subscribe(f func(backend.Change)) func() {
+	b.listenMu.Lock()
+	defer b.listenMu.Unlock()
+	if b.listeners == nil {
+		b.listeners = map[int]func(backend.Change){}
+	}
+	id := b.nextID
+	b.nextID++
+	b.listeners[id] = f
+	return func() {
+		b.listenMu.Lock()
+		defer b.listenMu.Unlock()
+		delete(b.listeners, id)
+	}
+}
+
+// publish hands one change to everybody listening.
+func (b *Backend) publish(c backend.Change) {
+	b.listenMu.Lock()
+	listeners := make([]func(backend.Change), 0, len(b.listeners))
+	for _, f := range b.listeners {
+		listeners = append(listeners, f)
+	}
+	b.listenMu.Unlock()
+	for _, f := range listeners {
+		f(c)
+	}
 }
 
 // NewBackend returns a Backend for server. No process is started until one is
@@ -101,7 +141,7 @@ func (b *Backend) session(ctx context.Context) (backend.Connection, *Process, er
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := b.connector.Connect(ctx, b.server, proc.Pipes())
+	conn, err := b.connector.Connect(ctx, b.server, proc.Pipes(), b.publish)
 	if err != nil {
 		// The process is of no use without a session over it.
 		_ = proc.Stop(ctx)

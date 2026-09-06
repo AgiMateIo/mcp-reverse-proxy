@@ -18,6 +18,7 @@ const (
 	methodResourcesList         = "resources/list"
 	methodResourcesTemplates    = "resources/templates/list"
 	methodResourcesRead         = "resources/read"
+	methodSubscriptionsListen   = "subscriptions/listen"
 	methodSamplingCreateMessage = "sampling/createMessage"
 )
 
@@ -34,6 +35,61 @@ type unsupportedVersionData struct {
 // exitToolName is the tool that terminates a fixture instead of answering,
 // under Options.ExitOnCall.
 const exitToolName = "exit"
+
+// changeToolName is the tool that makes a fixture announce that part of its
+// surface changed. A change has to be triggered from outside for a test to
+// know when it happened, and a tool call is the one channel a test already has
+// to the fixture.
+const changeToolName = "change"
+
+// Notification methods a fixture emits when its surface changes.
+var changeNotifications = map[string]string{
+	"tools":     "notifications/tools/list_changed",
+	"prompts":   "notifications/prompts/list_changed",
+	"resources": "notifications/resources/list_changed",
+}
+
+// metaKeySubscriptionID ties a notification to the subscriptions/listen stream
+// that asked for it. A modern backend stamps it; a legacy one has no such
+// stream and stamps nothing.
+const metaKeySubscriptionID = "io.modelcontextprotocol/subscriptionId"
+
+// changeTool triggers a notification. Its argument names the kind.
+var changeTool = tool{
+	Name:        changeToolName,
+	Title:       "Change",
+	Description: "Announces that one of this server's lists changed.",
+	InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`),
+}
+
+// changeToolArgs are its arguments.
+type changeToolArgs struct {
+	Kind string `json:"kind"`
+}
+
+// subscriptionsListenParams is what a client asks to be told about.
+type subscriptionsListenParams struct {
+	Notifications *notificationSubscriptions `json:"notifications"`
+}
+
+type notificationSubscriptions struct {
+	ToolsListChanged     bool `json:"toolsListChanged,omitempty"`
+	PromptsListChanged   bool `json:"promptsListChanged,omitempty"`
+	ResourcesListChanged bool `json:"resourcesListChanged,omitempty"`
+}
+
+// subscriptionsAcknowledgedParams is the first message on the stream.
+type subscriptionsAcknowledgedParams struct {
+	Notifications *notificationSubscriptions `json:"notifications"`
+	Meta          map[string]any             `json:"_meta,omitempty"`
+}
+
+// listChangedParams is the body of a list-changed notification. A modern
+// backend carries the subscription id; a legacy one sends the notification
+// bare, which is exactly what has to be normalized away.
+type listChangedParams struct {
+	Meta map[string]any `json:"_meta,omitempty"`
+}
 
 // ttlMs is the cache hint modern-era fixture results carry.
 const ttlMs = 60_000
@@ -99,6 +155,16 @@ func (w *writer) failData(id json.RawMessage, code int, msg string, data any) er
 		return fmt.Errorf("testfixtures: encode error data: %w", err)
 	}
 	return w.send(message{ID: id, Error: &wireError{Code: code, Message: msg, Data: raw}})
+}
+
+// notify issues a server-to-client notification, which carries no id and is
+// never answered.
+func (w *writer) notify(method string, params any) error {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("testfixtures: encode params of %s: %w", method, err)
+	}
+	return w.send(message{Method: method, Params: raw})
 }
 
 // request issues a server-to-client request.

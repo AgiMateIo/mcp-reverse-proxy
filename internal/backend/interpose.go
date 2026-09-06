@@ -15,11 +15,15 @@ import (
 
 // MCP methods the era policy turns on.
 const (
-	methodDiscover          = "server/discover"
-	methodInitialize        = "initialize"
-	methodSampling          = "sampling/createMessage"
-	methodRootsList         = "roots/list"
-	methodElicitationCreate = "elicitation/create"
+	methodDiscover   = "server/discover"
+	methodInitialize = "initialize"
+	// methodSubscriptionsListen is the stream a modern backend reports its own
+	// changes on. The SDK client opens it during Connect, because the gateway
+	// registers handlers for the list-changed notifications.
+	methodSubscriptionsListen = "subscriptions/listen"
+	methodSampling            = "sampling/createMessage"
+	methodRootsList           = "roots/list"
+	methodElicitationCreate   = "elicitation/create"
 )
 
 // maskedRequests are the server-to-client requests the gateway never invites.

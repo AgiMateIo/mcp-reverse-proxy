@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	methodDiscover   = "server/discover"
-	methodInitialize = "initialize"
+	methodDiscover            = "server/discover"
+	methodInitialize          = "initialize"
+	methodSubscriptionsListen = "subscriptions/listen"
 )
 
 // Task 4.2: era detection under `auto`, against a backend of each era.
@@ -31,8 +32,11 @@ func TestEraDetection(t *testing.T) {
 			name: "modern backend answers the probe",
 			mode: testfixtures.ModeModern,
 			want: config.EraModern,
-			// No handshake at all: revision 2026-07-28 removed it.
-			wantMethods: []string{methodDiscover},
+			// No handshake at all: revision 2026-07-28 removed it. The
+			// listen stream follows the probe because the gateway asks a
+			// modern backend to report its own changes, which is the only
+			// way it hears about one.
+			wantMethods: []string{methodDiscover, methodSubscriptionsListen},
 		},
 		{
 			name: "legacy backend refuses the probe",

@@ -41,6 +41,10 @@ type Backend interface {
 	CallTool(ctx context.Context, name string, arguments json.RawMessage) (backend.ToolResult, error)
 	GetPrompt(ctx context.Context, name string, arguments map[string]string) (backend.PromptResult, error)
 	ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error)
+	// Listen opens one client's stream of backend changes. It takes the
+	// request's context because which backends those are depends on who is
+	// asking.
+	Listen(ctx context.Context) (*aggregate.Listener, error)
 }
 
 // An Endpoint is the gateway's public MCP surface.

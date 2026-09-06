@@ -110,6 +110,10 @@ type Options struct {
 	// environment and argument list at startup. It is how a test can see
 	// exactly what the gateway handed the process — and what it did not.
 	EnvDumpFile string
+	// AnnounceChanges adds the "change" tool, a call to which makes the
+	// fixture emit a list-changed notification of the named kind. A change has
+	// to be triggerable for a test to know when one happened.
+	AnnounceChanges bool
 	// ExitOnCall makes a call to the "exit" tool terminate the fixture without
 	// answering, which is how a request in flight when its backend dies is
 	// staged. It calls os.Exit, so it is only meaningful — and only safe — in
@@ -163,6 +167,10 @@ type fixture struct {
 	// negotiated records that the version retry of Options.NegotiateOnce has
 	// already been demanded once.
 	negotiated bool
+	// subscription is the id of the open subscriptions/listen request, which
+	// every later notification is stamped with. A legacy fixture never has
+	// one, and its notifications go out bare.
+	subscription json.RawMessage
 }
 
 func newFixture(mode Mode, stdout io.Writer) (*fixture, error) {
@@ -277,6 +285,8 @@ func (f *fixture) dispatchModern(msg *message) error {
 		})
 	case methodResourcesRead:
 		return f.readResource(msg, true)
+	case methodSubscriptionsListen:
+		return f.listen(msg)
 	case methodInitialize:
 		// Revision 2026-07-28 removed the handshake.
 		return f.out.fail(msg.ID, codeMethodNotFound, "initialize was removed in "+versionModern)
@@ -339,6 +349,27 @@ func (f *fixture) callTool(msg *message, modern bool) error {
 	}
 	if f.opts.ExitOnCall && params.Name == exitToolName {
 		os.Exit(1)
+	}
+	if params.Name == changeToolName {
+		var args changeToolArgs
+		if len(params.Arguments) > 0 {
+			if err := json.Unmarshal(params.Arguments, &args); err != nil {
+				return fmt.Errorf("testfixtures: decode change arguments: %w", err)
+			}
+		}
+		// Answered first, so that a client waiting on the call cannot see the
+		// notification before the result that caused it.
+		res := callToolResult{Content: []content{{
+			Type: "text",
+			Text: fmt.Sprintf("%s announced a %s change", serverNames[f.mode], args.Kind),
+		}}}
+		if modern {
+			res.ResultType = "complete"
+		}
+		if err := f.out.result(msg.ID, res); err != nil {
+			return err
+		}
+		return f.announce(args.Kind)
 	}
 	res := callToolResult{
 		Content: []content{{
@@ -431,10 +462,56 @@ func (f *fixture) unknownMethod(msg *message) error {
 
 // tools is the tool set this fixture serves.
 func (f *fixture) tools() []tool {
-	if !f.opts.ExitOnCall {
-		return fixtureTools
+	tools := append([]tool{}, fixtureTools...)
+	if f.opts.AnnounceChanges {
+		tools = append(tools, changeTool)
 	}
-	return append(append([]tool{}, fixtureTools...), exitTool)
+	if f.opts.ExitOnCall {
+		tools = append(tools, exitTool)
+	}
+	return tools
+}
+
+// listen answers subscriptions/listen the way a modern server does: it agrees
+// to what was asked, acknowledges the stream, and holds the request open. The
+// request id becomes the subscription id every later notification carries.
+func (f *fixture) listen(msg *message) error {
+	var params subscriptionsListenParams
+	if len(msg.Params) > 0 {
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return fmt.Errorf("testfixtures: decode subscriptions/listen params: %w", err)
+		}
+	}
+	f.subscription = msg.ID
+	// No response: the stream stays open until the client cancels it, and the
+	// acknowledgement is the first thing on it.
+	return f.out.notify("notifications/subscriptions/acknowledged", subscriptionsAcknowledgedParams{
+		Notifications: params.Notifications,
+		Meta:          map[string]any{metaKeySubscriptionID: subscriptionID(msg.ID)},
+	})
+}
+
+// announce emits one list-changed notification.
+func (f *fixture) announce(kind string) error {
+	method, ok := changeNotifications[kind]
+	if !ok {
+		return fmt.Errorf("testfixtures: unknown change kind %q", kind)
+	}
+	var body listChangedParams
+	if len(f.subscription) > 0 {
+		body.Meta = map[string]any{metaKeySubscriptionID: subscriptionID(f.subscription)}
+	}
+	return f.out.notify(method, body)
+}
+
+// subscriptionID unwraps a JSON-RPC id for use inside _meta, so that a numeric
+// id travels as a number rather than as its JSON text.
+func subscriptionID(id json.RawMessage) any {
+	var v any
+	if err := json.Unmarshal(id, &v); err != nil {
+		return string(id)
+	}
+	return v
 }
 
 func (f *fixture) implementation() implementation {

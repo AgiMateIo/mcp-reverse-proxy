@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -33,6 +34,9 @@ type stub struct {
 	// means: not a refusal, but silence until somebody stops waiting.
 	hang  bool
 	ttlMs int
+
+	subMu sync.Mutex
+	subs  map[int]func(backend.Change)
 
 	calls atomic.Int64
 	// lastName records what the backend was asked for, unprefixed.
@@ -110,6 +114,35 @@ func (s *stub) ListResourceTemplates(context.Context) (backend.ResourceTemplateL
 		templates = append(templates, backend.ResourceTemplate{Name: u, URITemplate: u})
 	}
 	return backend.ResourceTemplateList{Templates: templates}, nil
+}
+
+// Subscribe makes the stub a source of changes. publish is what a test uses to
+// stand in for a backend announcing one.
+func (s *stub) Subscribe(f func(backend.Change)) func() {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+	id := len(s.subs)
+	if s.subs == nil {
+		s.subs = map[int]func(backend.Change){}
+	}
+	s.subs[id] = f
+	return func() {
+		s.subMu.Lock()
+		defer s.subMu.Unlock()
+		delete(s.subs, id)
+	}
+}
+
+func (s *stub) publish(kind backend.ChangeKind) {
+	s.subMu.Lock()
+	subs := make([]func(backend.Change), 0, len(s.subs))
+	for _, f := range s.subs {
+		subs = append(subs, f)
+	}
+	s.subMu.Unlock()
+	for _, f := range subs {
+		f(backend.Change{ServerID: "stub", Kind: kind})
+	}
 }
 
 func (s *stub) ReadResource(_ context.Context, uri string) (backend.ResourceContents, error) {
@@ -485,4 +518,66 @@ func TestAHungBackendDoesNotHoldTheListing(t *testing.T) {
 			t.Errorf("unavailable = %v, want [silent]", s.Unavailable)
 		}
 	})
+}
+
+// A burst of one kind must not crowd out another. The stream carries a signal
+// to re-list rather than a description of a difference, so repeats of one kind
+// collapse — but collapsing them must not cost a change of a different kind its
+// place, which is what a plain buffer would do.
+func TestAChangeBurstDoesNotCrowdOutAnotherKind(t *testing.T) {
+	t.Parallel()
+	source := &stub{}
+	g := aggregate.New(map[string]aggregate.Source{"gh": source}, 0, nil)
+	l, err := g.Listen(t.Context())
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer l.Close()
+
+	for range 100 {
+		source.publish(backend.ChangeTools)
+	}
+	source.publish(backend.ChangePrompts)
+
+	seen := map[backend.ChangeKind]int{}
+	for range 2 {
+		kind, ok := l.Next(t.Context())
+		if !ok {
+			t.Fatal("the stream ended early")
+		}
+		seen[kind]++
+	}
+	if seen[backend.ChangeTools] != 1 || seen[backend.ChangePrompts] != 1 {
+		t.Errorf("saw %v, want one of each kind", seen)
+	}
+}
+
+// A listener releases what it held, and only its own.
+func TestClosingOneListenerLeavesTheOthers(t *testing.T) {
+	t.Parallel()
+	source := &stub{}
+	g := aggregate.New(map[string]aggregate.Source{"gh": source}, 0, nil)
+	first, err := g.Listen(t.Context())
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	second, err := g.Listen(t.Context())
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer second.Close()
+	if got := g.Listeners(); got != 2 {
+		t.Fatalf("listeners = %d, want 2", got)
+	}
+
+	first.Close()
+	first.Close() // releasing twice is what a broken stream does
+	if got := g.Listeners(); got != 1 {
+		t.Errorf("listeners = %d, want 1", got)
+	}
+
+	source.publish(backend.ChangeTools)
+	if kind, ok := second.Next(t.Context()); !ok || kind != backend.ChangeTools {
+		t.Errorf("the surviving listener got (%q, %v), want a tools change", kind, ok)
+	}
 }

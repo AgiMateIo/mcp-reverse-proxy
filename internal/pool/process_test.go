@@ -84,7 +84,7 @@ func TestSpawnAndRoundTrip(t *testing.T) {
 	}
 
 	conn, err := backend.NewConnector("test", probeTimeout, nil).
-		Connect(t.Context(), server, proc.Pipes())
+		Connect(t.Context(), server, proc.Pipes(), nil)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

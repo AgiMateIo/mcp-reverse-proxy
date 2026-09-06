@@ -38,6 +38,7 @@ type poolBackend interface {
 	ListResources(ctx context.Context) (backend.ResourceList, error)
 	ListResourceTemplates(ctx context.Context) (backend.ResourceTemplateList, error)
 	ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error)
+	Subscribe(f func(backend.Change)) func()
 	PID() int
 	Close(ctx context.Context) error
 }
@@ -62,6 +63,13 @@ type Pool struct {
 	mu         sync.Mutex
 	entries    map[key]*entry
 	perSubject map[string]int
+	// listeners are the change subscriptions of each key, kept by the pool
+	// rather than by the backend because a backend is the shorter-lived of the
+	// two: it is evicted, expires and is restarted, and a client's stream must
+	// outlive all three. Every backend started for a key is subscribed to on
+	// the subscribers' behalf.
+	listeners  map[key]map[int]func(backend.Change)
+	nextListen int
 	stats      Stats
 	closed     bool
 
@@ -87,6 +95,9 @@ type entry struct {
 	// is never evicted: making room by killing somebody's running request
 	// turns load into failure.
 	inflight int
+	// releases undoes this backend's subscriptions, by the identifier the pool
+	// gave each subscriber.
+	releases map[int]func()
 }
 
 // Stats is what the pool reports about itself.
@@ -123,6 +134,7 @@ func New(connector backend.Connector, fingerprints *config.Fingerprinter, limits
 		logger:       logger,
 		entries:      make(map[key]*entry),
 		perSubject:   make(map[string]int),
+		listeners:    make(map[key]map[int]func(backend.Change)),
 		stopReap:     cancel,
 	}
 	p.newBackend = func(server config.Server) poolBackend {
@@ -173,6 +185,17 @@ func (h *Handle) CallTool(ctx context.Context, name string, arguments json.RawMe
 	}
 	defer h.pool.release(e)
 	return e.backend.CallTool(ctx, name, arguments)
+}
+
+// Subscribe registers f for the changes of this subject's server, across every
+// process that serves it: a backend evicted, expired or restarted is replaced
+// under the same subscription, and the caller is not told, because from the
+// client's side nothing happened.
+//
+// The callback runs on the backend connection's reading goroutine and must not
+// block.
+func (h *Handle) Subscribe(f func(backend.Change)) func() {
+	return h.pool.subscribe(h.key, f)
 }
 
 // PID reports the process currently serving this subject's requests, or zero if
@@ -247,11 +270,56 @@ func (p *Pool) tryAcquire(k key, server config.Server) (acquired, victim *entry,
 // insertLocked starts a new entry, already marked busy so that nothing evicts
 // it before its first request is served.
 func (p *Pool) insertLocked(k key, server config.Server) *entry {
-	e := &entry{key: k, server: server, backend: p.newBackend(server), lastUsed: time.Now(), inflight: 1}
+	e := &entry{
+		key: k, server: server, backend: p.newBackend(server),
+		lastUsed: time.Now(), inflight: 1, releases: map[int]func(){},
+	}
+	// Whoever was listening for this key before this backend existed is
+	// listening to it now: a subscription is to the server, not to the process
+	// that happens to be serving it.
+	for id, f := range p.listeners[k] {
+		e.releases[id] = e.backend.Subscribe(f)
+	}
 	p.entries[k] = e
 	p.perSubject[k.subject]++
 	p.stats.Created++
 	return e
+}
+
+// subscribe registers f for one key's changes, for as long as the caller keeps
+// the returned release. It starts no process: a client may listen for changes
+// before it has asked for anything, and asking who is listening must not be
+// what causes a backend to run.
+func (p *Pool) subscribe(k key, f func(backend.Change)) func() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	id := p.nextListen
+	p.nextListen++
+	if p.listeners[k] == nil {
+		p.listeners[k] = map[int]func(backend.Change){}
+	}
+	p.listeners[k][id] = f
+	if e, ok := p.entries[k]; ok {
+		e.releases[id] = e.backend.Subscribe(f)
+	}
+	return func() { p.unsubscribe(k, id) }
+}
+
+// unsubscribe forgets one subscription, and detaches it from the backend
+// currently serving the key if there is one.
+func (p *Pool) unsubscribe(k key, id int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.listeners[k], id)
+	if len(p.listeners[k]) == 0 {
+		delete(p.listeners, k)
+	}
+	if e, ok := p.entries[k]; ok {
+		if release, ok := e.releases[id]; ok {
+			release()
+			delete(e.releases, id)
+		}
+	}
 }
 
 // release marks a request finished.
