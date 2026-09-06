@@ -33,6 +33,11 @@ var (
 type poolBackend interface {
 	ListTools(ctx context.Context) (backend.ToolList, error)
 	CallTool(ctx context.Context, name string, arguments json.RawMessage) (backend.ToolResult, error)
+	ListPrompts(ctx context.Context) (backend.PromptList, error)
+	GetPrompt(ctx context.Context, name string, arguments map[string]string) (backend.PromptResult, error)
+	ListResources(ctx context.Context) (backend.ResourceList, error)
+	ListResourceTemplates(ctx context.Context) (backend.ResourceTemplateList, error)
+	ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error)
 	PID() int
 	Close(ctx context.Context) error
 }
@@ -376,4 +381,54 @@ func (p *Pool) Close(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// ListPrompts lists the server's prompts for this subject.
+func (h *Handle) ListPrompts(ctx context.Context) (backend.PromptList, error) {
+	e, err := h.pool.acquire(ctx, h.key, h.server)
+	if err != nil {
+		return backend.PromptList{}, err
+	}
+	defer h.pool.release(e)
+	return e.backend.ListPrompts(ctx)
+}
+
+// GetPrompt fetches a prompt from the server for this subject.
+func (h *Handle) GetPrompt(ctx context.Context, name string, arguments map[string]string) (backend.PromptResult, error) {
+	e, err := h.pool.acquire(ctx, h.key, h.server)
+	if err != nil {
+		return backend.PromptResult{}, err
+	}
+	defer h.pool.release(e)
+	return e.backend.GetPrompt(ctx, name, arguments)
+}
+
+// ListResources lists the server's resources for this subject.
+func (h *Handle) ListResources(ctx context.Context) (backend.ResourceList, error) {
+	e, err := h.pool.acquire(ctx, h.key, h.server)
+	if err != nil {
+		return backend.ResourceList{}, err
+	}
+	defer h.pool.release(e)
+	return e.backend.ListResources(ctx)
+}
+
+// ListResourceTemplates lists the server's resource templates for this subject.
+func (h *Handle) ListResourceTemplates(ctx context.Context) (backend.ResourceTemplateList, error) {
+	e, err := h.pool.acquire(ctx, h.key, h.server)
+	if err != nil {
+		return backend.ResourceTemplateList{}, err
+	}
+	defer h.pool.release(e)
+	return e.backend.ListResourceTemplates(ctx)
+}
+
+// ReadResource reads one of the server's resources for this subject.
+func (h *Handle) ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error) {
+	e, err := h.pool.acquire(ctx, h.key, h.server)
+	if err != nil {
+		return backend.ResourceContents{}, err
+	}
+	defer h.pool.release(e)
+	return e.backend.ReadResource(ctx, uri)
 }

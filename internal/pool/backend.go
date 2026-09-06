@@ -151,3 +151,69 @@ func (b *Backend) discardLocked(ctx context.Context) error {
 	}
 	return errors.Join(errs...)
 }
+
+// ListPrompts lists the backend's prompts, starting or restarting it as needed.
+func (b *Backend) ListPrompts(ctx context.Context) (backend.PromptList, error) {
+	conn, proc, err := b.session(ctx)
+	if err != nil {
+		return backend.PromptList{}, err
+	}
+	res, err := conn.ListPrompts(ctx)
+	if err != nil {
+		return backend.PromptList{}, b.classify(proc, err)
+	}
+	return res, nil
+}
+
+// GetPrompt fetches a prompt from the backend.
+func (b *Backend) GetPrompt(ctx context.Context, name string, arguments map[string]string) (backend.PromptResult, error) {
+	conn, proc, err := b.session(ctx)
+	if err != nil {
+		return backend.PromptResult{}, err
+	}
+	res, err := conn.GetPrompt(ctx, name, arguments)
+	if err != nil {
+		return backend.PromptResult{}, b.classify(proc, err)
+	}
+	return res, nil
+}
+
+// ListResources lists the backend's resources.
+func (b *Backend) ListResources(ctx context.Context) (backend.ResourceList, error) {
+	conn, proc, err := b.session(ctx)
+	if err != nil {
+		return backend.ResourceList{}, err
+	}
+	res, err := conn.ListResources(ctx)
+	if err != nil {
+		return backend.ResourceList{}, b.classify(proc, err)
+	}
+	return res, nil
+}
+
+// ListResourceTemplates lists the backend's resource templates.
+func (b *Backend) ListResourceTemplates(ctx context.Context) (backend.ResourceTemplateList, error) {
+	conn, proc, err := b.session(ctx)
+	if err != nil {
+		return backend.ResourceTemplateList{}, err
+	}
+	res, err := conn.ListResourceTemplates(ctx)
+	if err != nil {
+		return backend.ResourceTemplateList{}, b.classify(proc, err)
+	}
+	return res, nil
+}
+
+// ReadResource reads one of the backend's resources, under the backend's own
+// URI.
+func (b *Backend) ReadResource(ctx context.Context, uri string) (backend.ResourceContents, error) {
+	conn, proc, err := b.session(ctx)
+	if err != nil {
+		return backend.ResourceContents{}, err
+	}
+	res, err := conn.ReadResource(ctx, uri)
+	if err != nil {
+		return backend.ResourceContents{}, b.classify(proc, err)
+	}
+	return res, nil
+}

@@ -42,6 +42,28 @@ func (f *fakeBackend) CallTool(context.Context, string, json.RawMessage) (backen
 	return backend.ToolResult{}, nil
 }
 
+// The pool forwards the rest of the surface without inspecting it, so these
+// answer emptily: what the pool is tested for is process lifetime.
+func (f *fakeBackend) ListPrompts(context.Context) (backend.PromptList, error) {
+	return backend.PromptList{}, nil
+}
+
+func (f *fakeBackend) GetPrompt(context.Context, string, map[string]string) (backend.PromptResult, error) {
+	return backend.PromptResult{}, nil
+}
+
+func (f *fakeBackend) ListResources(context.Context) (backend.ResourceList, error) {
+	return backend.ResourceList{}, nil
+}
+
+func (f *fakeBackend) ListResourceTemplates(context.Context) (backend.ResourceTemplateList, error) {
+	return backend.ResourceTemplateList{}, nil
+}
+
+func (f *fakeBackend) ReadResource(context.Context, string) (backend.ResourceContents, error) {
+	return backend.ResourceContents{}, nil
+}
+
 func (f *fakeBackend) PID() int { return f.pid }
 
 func (f *fakeBackend) Close(context.Context) error {

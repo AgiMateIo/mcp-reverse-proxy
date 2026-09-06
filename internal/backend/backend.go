@@ -58,6 +58,73 @@ type ToolResult struct {
 	ResultType string
 }
 
+// A Prompt is one prompt as a backend describes it, before namespacing.
+type Prompt struct {
+	Name        string
+	Title       string
+	Description string
+	// Arguments is the raw JSON array of argument descriptors, carried
+	// opaquely for the same reason a tool's schema is.
+	Arguments json.RawMessage
+}
+
+// A PromptList is the outcome of a prompts/list against a backend.
+type PromptList struct {
+	Prompts    []Prompt
+	ResultType string
+	Cache      Cache
+}
+
+// A PromptResult is the outcome of a prompts/get against a backend.
+type PromptResult struct {
+	Description string
+	// Messages is the raw JSON message array.
+	Messages   json.RawMessage
+	ResultType string
+}
+
+// A Resource is one resource as a backend describes it, under the backend's own
+// URI rather than the gateway's.
+type Resource struct {
+	URI         string
+	Name        string
+	Title       string
+	Description string
+	MIMEType    string
+}
+
+// A ResourceList is the outcome of a resources/list against a backend.
+type ResourceList struct {
+	Resources  []Resource
+	ResultType string
+	Cache      Cache
+}
+
+// A ResourceTemplate is one resource template as a backend describes it.
+type ResourceTemplate struct {
+	URITemplate string
+	Name        string
+	Title       string
+	Description string
+	MIMEType    string
+}
+
+// A ResourceTemplateList is the outcome of a resources/templates/list.
+type ResourceTemplateList struct {
+	Templates  []ResourceTemplate
+	ResultType string
+	Cache      Cache
+}
+
+// A ResourceContents is the outcome of a resources/read against a backend.
+type ResourceContents struct {
+	// Contents is the raw JSON contents array. The URIs inside it are the
+	// backend's own; wrapping them into gateway URIs is aggregation's job.
+	Contents   json.RawMessage
+	ResultType string
+	Cache      Cache
+}
+
 // A Connection is a live MCP session with one stdio backend.
 type Connection interface {
 	// Era reports the protocol era this session settled on. It is fixed for
@@ -69,6 +136,13 @@ type Connection interface {
 	Revision() string
 	ListTools(ctx context.Context) (ToolList, error)
 	CallTool(ctx context.Context, name string, arguments json.RawMessage) (ToolResult, error)
+	ListPrompts(ctx context.Context) (PromptList, error)
+	GetPrompt(ctx context.Context, name string, arguments map[string]string) (PromptResult, error)
+	ListResources(ctx context.Context) (ResourceList, error)
+	ListResourceTemplates(ctx context.Context) (ResourceTemplateList, error)
+	// ReadResource takes the backend's own URI, never a gateway one: the
+	// wrapping is undone before a request reaches this far.
+	ReadResource(ctx context.Context, uri string) (ResourceContents, error)
 	// Close ends the session. It does not stop the backend process: the pipes
 	// belong to whoever spawned it.
 	Close() error

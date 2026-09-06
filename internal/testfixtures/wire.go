@@ -13,6 +13,10 @@ const (
 	methodDiscover              = "server/discover"
 	methodToolsList             = "tools/list"
 	methodToolsCall             = "tools/call"
+	methodPromptsList           = "prompts/list"
+	methodPromptsGet            = "prompts/get"
+	methodResourcesList         = "resources/list"
+	methodResourcesTemplates    = "resources/templates/list"
 	methodResourcesRead         = "resources/read"
 	methodSamplingCreateMessage = "sampling/createMessage"
 )
@@ -115,7 +119,9 @@ type implementation struct {
 // capabilities is the server capability set. Only tools are advertised: the
 // fixtures exist to exercise era handling, not the whole feature surface.
 type capabilities struct {
-	Tools *listChangedCapability `json:"tools,omitempty"`
+	Tools     *listChangedCapability `json:"tools,omitempty"`
+	Prompts   *listChangedCapability `json:"prompts,omitempty"`
+	Resources *listChangedCapability `json:"resources,omitempty"`
 }
 
 type listChangedCapability struct {
@@ -123,7 +129,11 @@ type listChangedCapability struct {
 }
 
 func serverCapabilities() capabilities {
-	return capabilities{Tools: &listChangedCapability{ListChanged: true}}
+	return capabilities{
+		Tools:     &listChangedCapability{ListChanged: true},
+		Prompts:   &listChangedCapability{ListChanged: true},
+		Resources: &listChangedCapability{ListChanged: true},
+	}
 }
 
 // An initializeResult is the legacy handshake response.
@@ -216,4 +226,117 @@ var fixtureTools = []tool{
 		Description: "Adds two numbers.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}`),
 	},
+}
+
+// A prompt is one entry of a `prompts/list` result.
+type prompt struct {
+	Name        string           `json:"name"`
+	Title       string           `json:"title,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []promptArgument `json:"arguments,omitempty"`
+}
+
+type promptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// A resource is one entry of a `resources/list` result.
+type resource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mimeType,omitempty"`
+}
+
+// A resourceTemplate is one entry of a `resources/templates/list` result.
+type resourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	MIMEType    string `json:"mimeType,omitempty"`
+}
+
+// envelope carries the fields revision 2026-07-28 adds to every list result. A
+// legacy fixture leaves it zero, so normalization has something to supply.
+type envelope struct {
+	ResultType string `json:"resultType,omitempty"`
+	TTLMs      int    `json:"ttlMs,omitempty"`
+	CacheScope string `json:"cacheScope,omitempty"`
+}
+
+// modernEnvelope is that same envelope filled in.
+func modernEnvelope() envelope {
+	return envelope{ResultType: "complete", TTLMs: ttlMs, CacheScope: "private"}
+}
+
+type listPromptsResult struct {
+	envelope
+	Prompts []prompt `json:"prompts"`
+}
+
+type listResourcesResult struct {
+	envelope
+	Resources []resource `json:"resources"`
+}
+
+type listResourceTemplatesResult struct {
+	envelope
+	ResourceTemplates []resourceTemplate `json:"resourceTemplates"`
+}
+
+type getPromptParams struct {
+	Name      string            `json:"name"`
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+type getPromptResult struct {
+	ResultType  string          `json:"resultType,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Messages    []promptMessage `json:"messages"`
+}
+
+type promptMessage struct {
+	Role    string  `json:"role"`
+	Content content `json:"content"`
+}
+
+type readResourceParams struct {
+	URI string `json:"uri"`
+}
+
+type readResourceResult struct {
+	envelope
+	Contents []resourceContents `json:"contents"`
+}
+
+type resourceContents struct {
+	URI      string `json:"uri"`
+	MIMEType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+}
+
+// fixturePrompts is the prompt set every fixture serves.
+var fixturePrompts = []prompt{
+	{
+		Name:        "greet",
+		Title:       "Greet",
+		Description: "Greets whoever is named.",
+		Arguments:   []promptArgument{{Name: "who", Description: "Who to greet", Required: true}},
+	},
+}
+
+// fixtureResourceURI is the one resource a fixture can actually read. Any other
+// URI still gets the obsolete not-found code, which is what normalization has
+// to remap.
+const fixtureResourceURI = "file:///readme.md"
+
+var fixtureResources = []resource{
+	{URI: fixtureResourceURI, Name: "readme", Title: "Readme", MIMEType: "text/markdown"},
+}
+
+var fixtureResourceTemplates = []resourceTemplate{
+	{URITemplate: "file:///{path}", Name: "file", Title: "Any file", MIMEType: "text/plain"},
 }

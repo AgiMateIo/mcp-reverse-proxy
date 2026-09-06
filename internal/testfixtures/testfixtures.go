@@ -264,6 +264,19 @@ func (f *fixture) dispatchModern(msg *message) error {
 		})
 	case methodToolsCall:
 		return f.callTool(msg, true)
+	case methodPromptsList:
+		return f.out.result(msg.ID, listPromptsResult{envelope: modernEnvelope(), Prompts: fixturePrompts})
+	case methodPromptsGet:
+		return f.getPrompt(msg, true)
+	case methodResourcesList:
+		return f.out.result(msg.ID, listResourcesResult{envelope: modernEnvelope(), Resources: fixtureResources})
+	case methodResourcesTemplates:
+		return f.out.result(msg.ID, listResourceTemplatesResult{
+			envelope:          modernEnvelope(),
+			ResourceTemplates: fixtureResourceTemplates,
+		})
+	case methodResourcesRead:
+		return f.readResource(msg, true)
 	case methodInitialize:
 		// Revision 2026-07-28 removed the handshake.
 		return f.out.fail(msg.ID, codeMethodNotFound, "initialize was removed in "+versionModern)
@@ -298,9 +311,18 @@ func (f *fixture) dispatchLegacy(msg *message) error {
 		return f.out.result(msg.ID, legacyListToolsResult{Tools: f.tools()})
 	case methodToolsCall:
 		return f.callTool(msg, false)
+	case methodPromptsList:
+		// Deliberately the legacy shape, like tools/list above: the envelope
+		// is missing and normalization has to supply it.
+		return f.out.result(msg.ID, listPromptsResult{Prompts: fixturePrompts})
+	case methodPromptsGet:
+		return f.getPrompt(msg, false)
+	case methodResourcesList:
+		return f.out.result(msg.ID, listResourcesResult{Resources: fixtureResources})
+	case methodResourcesTemplates:
+		return f.out.result(msg.ID, listResourceTemplatesResult{ResourceTemplates: fixtureResourceTemplates})
 	case methodResourcesRead:
-		// The obsolete code that normalization remaps to -32602.
-		return f.out.fail(msg.ID, codeResourceNotFound, "resource not found")
+		return f.readResource(msg, false)
 	default:
 		return f.unknownMethod(msg)
 	}
@@ -326,6 +348,57 @@ func (f *fixture) callTool(msg *message, modern bool) error {
 	}
 	if modern {
 		res.ResultType = "complete"
+	}
+	return f.out.result(msg.ID, res)
+}
+
+// getPrompt answers prompts/get, naming the fixture that served it so a test
+// can tell one backend's answer from another's.
+func (f *fixture) getPrompt(msg *message, modern bool) error {
+	var params getPromptParams
+	if len(msg.Params) > 0 {
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return fmt.Errorf("testfixtures: decode prompts/get params: %w", err)
+		}
+	}
+	res := getPromptResult{
+		Description: params.Name,
+		Messages: []promptMessage{{
+			Role: "user",
+			Content: content{
+				Type: "text",
+				Text: fmt.Sprintf("%s served prompt %s", serverNames[f.mode], params.Name),
+			},
+		}},
+	}
+	if modern {
+		res.ResultType = "complete"
+	}
+	return f.out.result(msg.ID, res)
+}
+
+// readResource answers resources/read for the one resource a fixture has, and
+// answers anything else with the obsolete not-found code that normalization
+// remaps to -32602.
+func (f *fixture) readResource(msg *message, modern bool) error {
+	var params readResourceParams
+	if len(msg.Params) > 0 {
+		if err := json.Unmarshal(msg.Params, &params); err != nil {
+			return fmt.Errorf("testfixtures: decode resources/read params: %w", err)
+		}
+	}
+	if params.URI != fixtureResourceURI {
+		return f.out.fail(msg.ID, codeResourceNotFound, "resource not found")
+	}
+	res := readResourceResult{
+		Contents: []resourceContents{{
+			URI:      params.URI,
+			MIMEType: "text/markdown",
+			Text:     fmt.Sprintf("%s served %s", serverNames[f.mode], params.URI),
+		}},
+	}
+	if modern {
+		res.envelope = modernEnvelope()
 	}
 	return f.out.result(msg.ID, res)
 }

@@ -160,3 +160,122 @@ func (c *sdkConnection) Close() error {
 	}
 	return nil
 }
+
+func (c *sdkConnection) ListPrompts(ctx context.Context) (PromptList, error) {
+	if c.session == nil {
+		return PromptList{}, fmt.Errorf("list prompts on %q: %w", c.serverID, ErrNotConnected)
+	}
+	res, err := c.session.ListPrompts(ctx, &mcp.ListPromptsParams{})
+	if err != nil {
+		return PromptList{}, fmt.Errorf("list prompts on %q: %w", c.serverID, normalizeError(c.serverID, err))
+	}
+	prompts := make([]Prompt, 0, len(res.Prompts))
+	for _, p := range res.Prompts {
+		prompt := Prompt{Name: p.Name, Title: p.Title, Description: p.Description}
+		if len(p.Arguments) > 0 {
+			args, err := json.Marshal(p.Arguments)
+			if err != nil {
+				return PromptList{}, fmt.Errorf("arguments of prompt %q on %q: %w", p.Name, c.serverID, err)
+			}
+			prompt.Arguments = args
+		}
+		prompts = append(prompts, prompt)
+	}
+	return PromptList{
+		Prompts:    prompts,
+		ResultType: normalizeResultType(string(res.ResultType)),
+		Cache:      normalizeCache(Cache{TTLMs: res.TTLMs, CacheScope: res.CacheScope}),
+	}, nil
+}
+
+func (c *sdkConnection) GetPrompt(ctx context.Context, name string, arguments map[string]string) (PromptResult, error) {
+	if c.session == nil {
+		return PromptResult{}, fmt.Errorf("get prompt %q on %q: %w", name, c.serverID, ErrNotConnected)
+	}
+	res, err := c.session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name, Arguments: arguments})
+	if err != nil {
+		return PromptResult{}, fmt.Errorf("get prompt %q on %q: %w", name, c.serverID, normalizeError(c.serverID, err))
+	}
+	messages, err := json.Marshal(res.Messages)
+	if err != nil {
+		return PromptResult{}, fmt.Errorf("messages of prompt %q on %q: %w", name, c.serverID, err)
+	}
+	return PromptResult{
+		Description: res.Description,
+		Messages:    messages,
+		// As with a tool call, the SDK keeps this result's own type unexported;
+		// the gateway emits "complete" because it implements no other flow.
+		ResultType: ResultTypeComplete,
+	}, nil
+}
+
+func (c *sdkConnection) ListResources(ctx context.Context) (ResourceList, error) {
+	if c.session == nil {
+		return ResourceList{}, fmt.Errorf("list resources on %q: %w", c.serverID, ErrNotConnected)
+	}
+	res, err := c.session.ListResources(ctx, &mcp.ListResourcesParams{})
+	if err != nil {
+		return ResourceList{}, fmt.Errorf("list resources on %q: %w", c.serverID, normalizeError(c.serverID, err))
+	}
+	resources := make([]Resource, 0, len(res.Resources))
+	for _, r := range res.Resources {
+		resources = append(resources, Resource{
+			URI:         r.URI,
+			Name:        r.Name,
+			Title:       r.Title,
+			Description: r.Description,
+			MIMEType:    r.MIMEType,
+		})
+	}
+	return ResourceList{
+		Resources:  resources,
+		ResultType: normalizeResultType(string(res.ResultType)),
+		Cache:      normalizeCache(Cache{TTLMs: res.TTLMs, CacheScope: res.CacheScope}),
+	}, nil
+}
+
+func (c *sdkConnection) ListResourceTemplates(ctx context.Context) (ResourceTemplateList, error) {
+	if c.session == nil {
+		return ResourceTemplateList{}, fmt.Errorf("list resource templates on %q: %w", c.serverID, ErrNotConnected)
+	}
+	res, err := c.session.ListResourceTemplates(ctx, &mcp.ListResourceTemplatesParams{})
+	if err != nil {
+		return ResourceTemplateList{}, fmt.Errorf("list resource templates on %q: %w", c.serverID, normalizeError(c.serverID, err))
+	}
+	templates := make([]ResourceTemplate, 0, len(res.ResourceTemplates))
+	for _, t := range res.ResourceTemplates {
+		templates = append(templates, ResourceTemplate{
+			URITemplate: t.URITemplate,
+			Name:        t.Name,
+			Title:       t.Title,
+			Description: t.Description,
+			MIMEType:    t.MIMEType,
+		})
+	}
+	return ResourceTemplateList{
+		Templates:  templates,
+		ResultType: normalizeResultType(string(res.ResultType)),
+		Cache:      normalizeCache(Cache{TTLMs: res.TTLMs, CacheScope: res.CacheScope}),
+	}, nil
+}
+
+func (c *sdkConnection) ReadResource(ctx context.Context, uri string) (ResourceContents, error) {
+	if c.session == nil {
+		return ResourceContents{}, fmt.Errorf("read resource %q on %q: %w", uri, c.serverID, ErrNotConnected)
+	}
+	res, err := c.session.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	if err != nil {
+		// A legacy backend answers an unknown resource with -32002, which this
+		// revision folds into invalid params; the normalizer does that.
+		return ResourceContents{}, fmt.Errorf("read resource %q on %q: %w", uri, c.serverID, normalizeError(c.serverID, err))
+	}
+	contents, err := json.Marshal(res.Contents)
+	if err != nil {
+		return ResourceContents{}, fmt.Errorf("contents of resource %q on %q: %w", uri, c.serverID, err)
+	}
+	return ResourceContents{
+		Contents:   contents,
+		ResultType: ResultTypeComplete,
+		Cache:      normalizeCache(Cache{TTLMs: res.TTLMs, CacheScope: res.CacheScope}),
+	}, nil
+}
