@@ -97,16 +97,16 @@
 
 ## 10. Subscription fan-in
 
-- [ ] 10.1 Accept `subscriptions/listen`, acknowledge the subscription, and tag notifications with `io.modelcontextprotocol/subscriptionId`, and verify the tag on a delivered notification
-- [ ] 10.2 Fan in `listChanged` notifications from modern backends, and verify a change in the modern fixture reaches the client stream
-- [ ] 10.3 Fan in change notifications from legacy backends through the legacy mechanism, normalizing them to the `2026-07-28` shape, and verify the client sees the modern form
-- [ ] 10.4 Filter notifications to the client's subscribed types, and verify a prompt list change is withheld from a tools-only subscriber
-- [ ] 10.5 Release subscription resources on stream break without disturbing other clients, and verify a second client's stream survives the first disconnecting
+- [x] 10.1 Accept `subscriptions/listen`, acknowledge the subscription, and tag notifications with `io.modelcontextprotocol/subscriptionId`, and verify the tag on a delivered notification
+- [x] 10.2 Fan in `listChanged` notifications from modern backends, and verify a change in the modern fixture reaches the client stream
+- [x] 10.3 Fan in change notifications from legacy backends through the legacy mechanism, normalizing them to the `2026-07-28` shape, and verify the client sees the modern form
+- [x] 10.4 Filter notifications to the client's subscribed types, and verify a prompt list change is withheld from a tools-only subscriber
+- [x] 10.5 Release subscription resources on stream break without disturbing other clients, and verify a second client's stream survives the first disconnecting
 
 ## 11. Integration and hardening
 
-- [ ] 11.1 Write an end-to-end test covering two subjects, two backends of different eras, and header configuration, and verify no cross-subject process reuse occurs
-- [ ] 11.2 Run the change against the MCP conformance suite for revision `2026-07-28`, and verify the frontend passes the applicable checks
-- [ ] 11.3 Add a race-detector run over the pool and fan-in tests, and verify it reports no data races
-- [ ] 11.4 Add a soak test spawning and evicting processes under load, and verify no process or file descriptor leak after the run
-- [ ] 11.5 Write deployment documentation covering policy modes, the `define-new` risk, and the requirement to suppress `x-mcp-config` in reverse proxy logs, and verify the document names every configuration option
+- [x] 11.1 Write an end-to-end test covering two subjects, two backends of different eras, and header configuration, and verify no cross-subject process reuse occurs
+- [x] 11.2 Run the change against the MCP conformance suite for revision `2026-07-28`, and verify the frontend passes the applicable checks
+- [x] 11.3 Add a race-detector run over the pool and fan-in tests, and verify it reports no data races
+- [x] 11.4 Add a soak test spawning and evicting processes under load, and verify no process or file descriptor leak after the run
+- [x] 11.5 Write deployment documentation covering policy modes, the `define-new` risk, and the requirement to suppress `x-mcp-config` in reverse proxy logs, and verify the document names every configuration option
