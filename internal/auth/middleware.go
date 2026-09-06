@@ -26,7 +26,7 @@ func Require(v *Verifier, metadataURL string, logger *slog.Logger) func(http.Han
 				var claims Claims
 				claims, err = v.Verify(r.Context(), token)
 				if err == nil {
-					next.ServeHTTP(w, r.WithContext(WithSubject(r.Context(), claims.Subject)))
+					next.ServeHTTP(w, r.WithContext(WithClaims(r.Context(), claims)))
 					return
 				}
 			}

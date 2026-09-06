@@ -21,6 +21,9 @@ func Resolve(base *config.File, p *policy.Policy, verify Claims, metadataURL str
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	if verify == nil {
+		verify = ContextClaims
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Wrapped the moment it is read: from here on the value cannot be
@@ -65,8 +68,17 @@ func Resolve(base *config.File, p *policy.Policy, verify Claims, metadataURL str
 
 // Claims reports what the authenticated subject's token carries. It is a
 // function so that the middleware need not know how the request was
-// authenticated.
+// authenticated; passing nil means the ordinary case, where authentication ran
+// first and left them on the context.
 type Claims func(*http.Request) auth.Claims
+
+// ContextClaims takes what the authentication middleware verified. A request
+// that never passed through it yields the zero claims, which carry no scopes
+// and so permit nothing beyond the deployment's floor.
+func ContextClaims(r *http.Request) auth.Claims {
+	c, _ := auth.ClaimsFromContext(r.Context())
+	return c
+}
 
 // refuse maps a policy verdict onto an answer.
 //

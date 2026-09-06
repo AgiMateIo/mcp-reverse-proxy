@@ -94,16 +94,34 @@ type KeySource interface {
 	Key(ctx context.Context, issuer, kid string) (crypto.PublicKey, error)
 }
 
-type subjectKey struct{}
+type claimsKey struct{}
 
+// WithClaims carries everything the verified token said about a request.
+//
+// The subject and the scopes travel together because the layers above need
+// both and neither can be recovered from the other: the pool keys by subject,
+// and the header policy decides by scope. Carrying only the subject would
+// force whoever needs a scope to verify the token a second time.
+func WithClaims(ctx context.Context, c Claims) context.Context {
+	return context.WithValue(ctx, claimsKey{}, c)
+}
+
+// ClaimsFromContext reports false for a request that was never authenticated.
+func ClaimsFromContext(ctx context.Context) (Claims, bool) {
+	c, ok := ctx.Value(claimsKey{}).(Claims)
+	return c, ok
+}
+
+// WithSubject carries a subject with no scopes. It exists for callers that
+// have only identified a request, not authorized it.
 func WithSubject(ctx context.Context, s Subject) context.Context {
-	return context.WithValue(ctx, subjectKey{}, s)
+	return WithClaims(ctx, Claims{Subject: s})
 }
 
 // SubjectFromContext reports false for a request that was never authenticated.
 func SubjectFromContext(ctx context.Context) (Subject, bool) {
-	s, ok := ctx.Value(subjectKey{}).(Subject)
-	return s, ok
+	c, ok := ClaimsFromContext(ctx)
+	return c.Subject, ok
 }
 
 // parseScopes splits the space-delimited form OAuth uses for the claim.
