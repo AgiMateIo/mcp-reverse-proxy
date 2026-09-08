@@ -17,6 +17,10 @@ contract; this file is only about how the code is written.
   the `modelcontextprotocol/go-sdk` requirement, and pin `toolchain` to the
   release actually used.
 - `go build ./...`, `go test ./...`, `go test -race ./...`, `golangci-lint run`.
+- `make vuln` scans the dependency graph with `govulncheck`. It is not part of
+  `make check`: it fetches the tool and queries the vulnerability database, so it
+  belongs where the network is expected. Most of the graph arrives through the
+  SDK, so a finding is usually resolved by a dependency bump rather than a fix.
 
 ## Layout
 

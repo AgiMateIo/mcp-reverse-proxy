@@ -1,4 +1,4 @@
-.PHONY: build vet lint test test-race test-concurrency conformance check
+.PHONY: build vet lint test test-race test-concurrency conformance vuln check
 
 build:
 	go build ./...
@@ -29,5 +29,14 @@ CONFORMANCE_VERSION ?= 0.2.0-alpha.10
 conformance:
 	MCP_CONFORMANCE=1 MCP_CONFORMANCE_VERSION=$(CONFORMANCE_VERSION) \
 		go test -count=1 -timeout 20m -run TestConformance ./internal/conformance
+
+# Known vulnerabilities in the dependency graph, symbol-level: a finding here
+# means the vulnerable function is reachable from this code, not merely present
+# in a module. Pinned rather than @latest so a run is reproducible, and outside
+# `check` for the same reason as conformance — it fetches the tool and queries
+# the vulnerability database over the network.
+GOVULNCHECK_VERSION ?= v1.7.0
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 check: build vet lint test-race
