@@ -173,3 +173,7 @@ are in [`docs/deployment.md`](docs/deployment.md).
   risk, and keeping the header out of a reverse proxy's logs.
 - [`config.example.yaml`](config.example.yaml) — a commented configuration.
 - [`openspec/`](openspec/) — the behavior specifications this implements.
+
+## License
+
+[MIT](LICENSE).
