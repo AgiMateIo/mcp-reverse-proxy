@@ -47,7 +47,7 @@ gateway holds nothing, and each subject's values reach only their own processes.
 ## Running it
 
 ```console
-$ go build ./cmd/mcp-reverse-proxy
+$ make bin                    # or: go build -o mcp-reverse-proxy ./cmd/mcp-reverse-proxy
 $ ./mcp-reverse-proxy \
     -config /etc/mcp-reverse-proxy/config.yaml \
     -resource https://gateway.example.com/mcp \
@@ -56,6 +56,10 @@ $ ./mcp-reverse-proxy \
     -addr 127.0.0.1:8080
 listening on 127.0.0.1:8080
 ```
+
+`make bin` accepts `BIN` to build straight into place —
+`make bin BIN=/usr/local/bin/mcp-reverse-proxy`. (`make build` is something
+else: it compiles every package as a check and writes no binary.)
 
 Everything that can fail at startup does — a missing configuration file, an
 unreadable key, a `define-new` policy without a command allowlist — so a gateway

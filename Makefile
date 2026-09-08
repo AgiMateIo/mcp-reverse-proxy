@@ -1,7 +1,15 @@
-.PHONY: build vet lint test test-race test-concurrency conformance vuln check
+.PHONY: build bin vet lint test test-race test-concurrency conformance vuln check
 
+# Compiles every package and writes nothing: this is the check that the tree
+# builds, not a way to obtain something to run.
 build:
 	go build ./...
+
+# The binary itself. BIN names where it lands, so a deployment can build
+# straight into place: make bin BIN=/usr/local/bin/mcp-reverse-proxy
+BIN ?= mcp-reverse-proxy
+bin:
+	go build -o $(BIN) ./cmd/mcp-reverse-proxy
 
 vet:
 	go vet ./...

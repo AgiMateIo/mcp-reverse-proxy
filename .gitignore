@@ -1,2 +1,6 @@
 .claude
 .idea/
+
+# Build output of `make bin`, and of a `go build` naming one command.
+/mcp-reverse-proxy
+/mcpfixture
