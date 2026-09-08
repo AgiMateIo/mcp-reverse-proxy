@@ -1,0 +1,4 @@
+servers: []
+servers:
+  - id: search
+    command: a

@@ -1,0 +1,5 @@
+servers:
+  - id: search
+    command: a
+  - id: search
+    command: b

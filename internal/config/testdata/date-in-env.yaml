@@ -1,0 +1,5 @@
+servers:
+  - id: search
+    command: a
+    env:
+      RELEASE: 2026-09-08

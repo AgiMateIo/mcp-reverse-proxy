@@ -6,9 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"slices"
+	"strings"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // ErrInvalid reports a configuration the gateway refuses to start with. Startup
@@ -121,22 +126,110 @@ func Load(ctx context.Context, path string) (*File, error) {
 }
 
 func parse(path string, data []byte) (*File, error) {
+	document, err := toJSON(data)
+	if err != nil {
+		return nil, fmt.Errorf("config %s: %w: %w", path, ErrInvalid, err)
+	}
 	var f File
-	dec := json.NewDecoder(bytes.NewReader(data))
+	dec := json.NewDecoder(bytes.NewReader(document))
 	// An unknown field is almost always a typo in a field the gateway then
 	// silently ignores; naming it beats starting with the wrong behavior.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("config %s: %w: %w", path, ErrInvalid, err)
 	}
-	if dec.More() {
-		return nil, fmt.Errorf("config %s: %w: trailing content after the top-level object", path, ErrInvalid)
-	}
 	f.applyDefaults()
 	if err := f.validate(path); err != nil {
 		return nil, err
 	}
 	return &f, nil
+}
+
+// toJSON reads the file as YAML and re-encodes it as JSON.
+//
+// The schema is described once, by the json tags on the types above: they are
+// what the x-mcp-config header is parsed against, what [Duration] and [Secret]
+// hook into, and what the deployment document is checked against. Decoding
+// YAML directly would need a second set of tags to keep in step with the first,
+// so the file is converted instead and the strict JSON decoder stays the one
+// place a configuration is interpreted.
+//
+// JSON files keep loading, YAML being a superset of JSON, with one difference:
+// a duplicate key is refused rather than resolved to the last one.
+func toJSON(data []byte) ([]byte, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	// KnownFields is deliberately not set here: unknown fields are the strict
+	// JSON decoder's to report, which names them the same way whichever syntax
+	// the file was written in.
+	var document any
+	if err := dec.Decode(&document); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, errors.New("the file is empty")
+		}
+		return nil, err
+	}
+	// A YAML stream may hold several documents. Only the first would ever be
+	// read, so a second one is a configuration the operator believes is in
+	// effect and is not.
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, errors.New("trailing content after the top-level object")
+	}
+	// An explicitly null document — an empty file with a `---` in it, or one
+	// truncated to nothing — is not an empty configuration; it is a file that
+	// says nothing, which is never what an operator meant to deploy.
+	if document == nil {
+		return nil, errors.New("the file is empty")
+	}
+	if err := refuseTimestamps(document, ""); err != nil {
+		return nil, err
+	}
+	// Fails on a mapping key YAML allows and JSON does not, such as a number.
+	// The error names the offending type rather than the value, which keeps an
+	// env value out of it.
+	return json.Marshal(document)
+}
+
+// refuseTimestamps rejects an unquoted scalar YAML read as a date or a time.
+//
+// Every other mistyped scalar is already loud: a number or a boolean where a
+// string belongs fails in the decoder, naming the field. A timestamp does not,
+// because it re-encodes as a string and lands in the field as though it had
+// been written that way — `TOKEN: 2026-09-08` reaching the backend as
+// "2026-09-08T00:00:00Z". A configuration value that arrives altered is worse
+// than one that is refused, and env values are precisely where an operator
+// cannot check the result: they are redacted everywhere the gateway could show
+// them back.
+//
+// The error names the path and never the value, so a secret written without
+// quotes stays out of the message.
+func refuseTimestamps(node any, path string) error {
+	switch n := node.(type) {
+	case time.Time:
+		return fmt.Errorf("%s: an unquoted value read as a date or a time; quote it", at(path))
+	case map[string]any:
+		// Sorted so that a file with two such values fails the same way twice
+		// rather than naming whichever one the map happened to yield first.
+		for _, key := range slices.Sorted(maps.Keys(n)) {
+			if err := refuseTimestamps(n[key], path+"."+key); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, item := range n {
+			if err := refuseTimestamps(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// at names a position in the document for an error message.
+func at(path string) string {
+	if path == "" {
+		return "the document"
+	}
+	return strings.TrimPrefix(path, ".")
 }
 
 // applyDefaults fills in what the file left out.

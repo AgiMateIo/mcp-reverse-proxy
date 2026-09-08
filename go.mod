@@ -7,6 +7,7 @@ toolchain go1.27.1
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/sync v0.20.0
 )
 

@@ -1,0 +1,95 @@
+# mcp-reverse-proxy — every option a deployment can set, with the defaults the
+# gateway applies to the ones it omits. Copy it, cut what you do not need, and
+# name it with -config.
+#
+#   mcp-reverse-proxy -config /etc/mcp-reverse-proxy/config.yaml \
+#     -resource https://gateway.example.com/mcp \
+#     -issuer https://auth.example.com/ \
+#     -key https://auth.example.com/=/etc/mcp-reverse-proxy/auth.pem
+#
+# An unknown field is refused rather than ignored, so a typo fails at startup
+# instead of quietly changing behavior. JSON files load too — YAML is a superset
+# of it — which is why an existing config.json needs no conversion.
+
+# The backends this deployment declares. May be empty only under the define-new
+# policy mode, where every server arrives in the request header instead.
+servers:
+  - # Namespaces the server's tools, prompts and resources: clients see
+    # `gh__create_issue`, and resources as `mcp-proxy://gh/<encoded URI>`.
+    # Must be unique.
+    id: gh
+    # The executable to run, started in its own process group so that
+    # termination reaches the whole descendant tree.
+    command: /usr/local/bin/mcp-github
+    args: ["--read-only"]
+    # Handed to the child process, and usually where the subject's credentials
+    # live — which is why the pool never shares a process between subjects.
+    # Never logged. These values are strings: quote anything YAML would
+    # otherwise read as a number, a boolean or a date.
+    env:
+      GITHUB_TOKEN: "…"
+    # Protocol era of the backend: auto, modern or legacy. Defaults to auto.
+    #
+    #   auto    probe with `server/discover`, fall back to the legacy
+    #           `initialize` handshake. Correct for anything, and costs one
+    #           probe timeout on every cold start against a backend that
+    #           answers nothing.
+    #   modern  probe, and refuse to fall back, so a backend that silently
+    #           degrades to legacy becomes a connection error.
+    #   legacy  send no probe at all. Saves the probe timeout on every cold
+    #           start, and cold starts are frequent because the pool is keyed
+    #           by subject.
+    era: auto
+
+  - id: docs
+    command: /usr/local/bin/mcp-docs
+    era: legacy
+
+# Process count grows as subjects × servers, so these are operational
+# necessities rather than tuning knobs. Durations are what Go's
+# time.ParseDuration accepts: 90s, 5m, 1h30m.
+limits:
+  # Live child processes across all subjects. At the limit the least recently
+  # used idle backend is evicted; if every backend is serving a request, the
+  # new request is refused rather than interrupting somebody else's.
+  maxProcesses: 64
+  # Live child processes for one subject, so that one subject cannot consume
+  # the host on everyone else's behalf.
+  maxProcessesPerSubject: 8
+  # How long a backend may serve no request before it is stopped.
+  idleTtl: 5m
+  # Bound on the `server/discover` probe. Without it a legacy backend that
+  # answers nothing hangs the connection until the request's context expires.
+  probeTimeout: 2s
+  # Cap on the x-mcp-config header value. Reverse proxies commonly cap a header
+  # at 8 KiB; a larger value here would only be refused further out.
+  maxHeaderBytes: 8192
+
+# What the x-mcp-config request header may do. The zero value is the closed one:
+# header configuration is opted into, not discovered to be on.
+policy:
+  # off             the header is refused outright.
+  # env-only        override env of a server this file declares.
+  #                 Token scope: mcp:config:env
+  # override-known  override any field of a server this file declares,
+  #                 including command and args.
+  #                 Token scope: mcp:config:override
+  # define-new      additionally declare servers this file never mentioned.
+  #                 Token scope: mcp:config:define
+  #
+  # define-new is remote code execution by design: read the section of
+  # docs/deployment.md that says so before enabling it.
+  #
+  # Quoted: YAML 1.1 tools read a bare `off` as a boolean, and a template or a
+  # linter in the deployment pipeline may well be one of them.
+  mode: "off"
+  # Executables a header may cause to run. Enforced in every mode, and
+  # mandatory under define-new — startup fails without it.
+  commandAllowlist:
+    - /usr/local/bin/mcp-github
+    - /usr/local/bin/mcp-docs
+  # Environment keys a header may never set, in any mode. The loader variables
+  # belong here: setting one turns an allowed command into an arbitrary one.
+  envDenylist:
+    - LD_PRELOAD
+    - DYLD_INSERT_LIBRARIES

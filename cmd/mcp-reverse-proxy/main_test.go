@@ -28,12 +28,17 @@ import (
 func TestGatewayStartsAndServes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
-	write(t, configPath, `{
-	  "servers": [{"id": "gh", "command": "/bin/cat"}],
-	  "limits": {"maxProcesses": 4, "idleTtl": "1m"},
-	  "policy": {"mode": "env-only"}
-	}`)
+	configPath := filepath.Join(dir, "config.yaml")
+	write(t, configPath, `
+servers:
+  - id: gh
+    command: /bin/cat
+limits:
+  maxProcesses: 4
+  idleTtl: 1m
+policy:
+  mode: env-only
+`)
 	keyPath := filepath.Join(dir, "issuer.pem")
 	write(t, keyPath, publicKeyPEM(t))
 
@@ -93,8 +98,8 @@ func TestStartupRefusals(t *testing.T) {
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "issuer.pem")
 	write(t, keyPath, publicKeyPEM(t))
-	good := filepath.Join(dir, "config.json")
-	write(t, good, `{"servers":[{"id":"gh","command":"/bin/cat"}]}`)
+	good := filepath.Join(dir, "config.yaml")
+	write(t, good, "servers:\n  - id: gh\n    command: /bin/cat\n")
 
 	base := []string{
 		"-config", good, "-addr", "127.0.0.1:0",
@@ -112,8 +117,8 @@ func TestStartupRefusals(t *testing.T) {
 		return out
 	}
 
-	definesWithoutAllowlist := filepath.Join(dir, "define-new.json")
-	write(t, definesWithoutAllowlist, `{"servers":[],"policy":{"mode":"define-new"}}`)
+	definesWithoutAllowlist := filepath.Join(dir, "define-new.yaml")
+	write(t, definesWithoutAllowlist, "servers: []\npolicy:\n  mode: define-new\n")
 	notAKey := filepath.Join(dir, "not-a-key.pem")
 	write(t, notAKey, "this is not PEM\n")
 
@@ -123,7 +128,7 @@ func TestStartupRefusals(t *testing.T) {
 		want string
 	}{
 		{"no configuration file named", []string{"-addr", "127.0.0.1:0"}, "-config"},
-		{"the configuration file is missing", replace("-config", filepath.Join(dir, "absent.json")), "absent.json"},
+		{"the configuration file is missing", replace("-config", filepath.Join(dir, "absent.yaml")), "absent.yaml"},
 		{"define-new without a command allowlist", replace("-config", definesWithoutAllowlist), "allowlist"},
 		{"the key is not a key", replace("-key", "https://issuer.example/="+notAKey), "PEM"},
 		{"the resource is not an absolute URI", replace("-resource", "/mcp"), "absolute URI"},

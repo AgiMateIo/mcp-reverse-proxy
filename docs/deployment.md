@@ -10,7 +10,7 @@ accepts a header that can change what is executed.
 
 ```
 mcp-reverse-proxy \
-  -config /etc/mcp-reverse-proxy/config.json \
+  -config /etc/mcp-reverse-proxy/config.yaml \
   -resource https://gateway.example.com/mcp \
   -issuer https://auth.example.com/ \
   -key https://auth.example.com/=/etc/mcp-reverse-proxy/auth.pem \
@@ -39,34 +39,46 @@ killed.
 
 ## Configuration file
 
-One JSON file, named with `-config`. Unknown fields are refused rather
+One YAML file, named with `-config`. Unknown fields are refused rather
 than ignored, so a typo fails at startup instead of changing behavior silently.
+`config.example.yaml` in the repository root is this file with every option set
+and commented.
 
-```json
-{
-  "servers": [
-    {
-      "id": "gh",
-      "command": "/usr/local/bin/mcp-github",
-      "args": ["--read-only"],
-      "env": { "GITHUB_TOKEN": "…" },
-      "era": "auto"
-    }
-  ],
-  "limits": {
-    "maxProcesses": 64,
-    "maxProcessesPerSubject": 8,
-    "idleTtl": "5m",
-    "probeTimeout": "2s",
-    "maxHeaderBytes": 8192
-  },
-  "policy": {
-    "mode": "off",
-    "commandAllowlist": ["/usr/local/bin/mcp-github"],
-    "envDenylist": ["LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]
-  }
-}
+```yaml
+servers:
+  - id: gh
+    command: /usr/local/bin/mcp-github
+    args: ["--read-only"]
+    env:
+      GITHUB_TOKEN: "…"
+    era: auto
+
+limits:
+  maxProcesses: 64
+  maxProcessesPerSubject: 8
+  idleTtl: 5m
+  probeTimeout: 2s
+  maxHeaderBytes: 8192
+
+policy:
+  mode: "off"
+  commandAllowlist: ["/usr/local/bin/mcp-github"]
+  envDenylist: ["LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]
 ```
+
+JSON files still load — YAML is a superset of JSON — so an existing
+`config.json` needs no conversion. One difference is worth knowing before
+relying on that: a duplicate key is refused rather than resolved to the last
+occurrence.
+
+YAML types unquoted scalars for you, and `env` values are strings, so quote
+anything that would otherwise read as a number, a boolean or a date:
+`API_VERSION: "2"`, not `API_VERSION: 2`. A number or a boolean is refused at
+startup naming the field; an unquoted date is refused too, because it is the one
+that would otherwise reach the backend rewritten — `2026-09-08` as
+`2026-09-08T00:00:00Z`. The same care applies to a `mode` of `off`: this parser
+reads it as a string, but YAML 1.1 tooling in a deployment pipeline reads a bare
+`off` as a boolean.
 
 ### `servers`
 
@@ -105,8 +117,7 @@ set its own.
 | `probeTimeout` | `2s` | Bound on the `server/discover` probe. Without it a legacy backend that answers nothing hangs the connection until the request's context expires. |
 | `maxHeaderBytes` | 8192 | Cap on the `x-mcp-config` header value. Reverse proxies commonly cap a header at 8 KiB; a larger value here would only be refused further out. |
 
-Durations are strings Go's `time.ParseDuration` accepts (`"90s"`, `"5m"`,
-`"1h30m"`).
+Durations are what Go's `time.ParseDuration` accepts (`90s`, `5m`, `1h30m`).
 
 ### `policy`
 
@@ -121,8 +132,9 @@ header configuration is opted into, not discovered to be on.
 
 ## The `x-mcp-config` header
 
-The header carries a JSON document of the same shape as the file's `servers`,
-with every field but `id` optional:
+The header carries a JSON document — JSON, not YAML: it is a header value, and
+the protocol specifies it — of the same shape as the file's `servers`, with
+every field but `id` optional:
 
 ```json
 {"servers": [{"id": "gh", "env": {"GITHUB_TOKEN": "…"}}]}

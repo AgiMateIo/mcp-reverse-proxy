@@ -21,7 +21,7 @@ func load(t *testing.T, name string) (*config.File, error) {
 // A valid file loads into the expected struct, values and all.
 func TestLoadValid(t *testing.T) {
 	t.Parallel()
-	got, err := load(t, "valid.json")
+	got, err := load(t, "valid.yaml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -57,10 +57,34 @@ func TestLoadValid(t *testing.T) {
 	}
 }
 
+// YAML is a superset of JSON, so a deployment's existing file keeps loading.
+// The two fixtures describe the same configuration in the two syntaxes; that
+// they parse to the same struct is the whole claim.
+func TestLoadAcceptsJSON(t *testing.T) {
+	t.Parallel()
+	// JSON is written in flow style throughout, where a tab is separation
+	// rather than indentation — so the YAML rule against tabs does not reach a
+	// JSON file, however it was formatted.
+	if _, err := load(t, "tabs.json"); err != nil {
+		t.Errorf("a tab-indented JSON file no longer loads: %v", err)
+	}
+	fromJSON, err := load(t, "valid.json")
+	if err != nil {
+		t.Fatalf("Load a JSON file: %v", err)
+	}
+	fromYAML, err := load(t, "valid.yaml")
+	if err != nil {
+		t.Fatalf("Load a YAML file: %v", err)
+	}
+	if !reflect.DeepEqual(fromJSON, fromYAML) {
+		t.Errorf("the same configuration parses differently:\nJSON: %+v\nYAML: %+v", fromJSON, fromYAML)
+	}
+}
+
 // A file that omits optional fields gets the documented defaults.
 func TestLoadDefaults(t *testing.T) {
 	t.Parallel()
-	got, err := load(t, "defaults.json")
+	got, err := load(t, "defaults.yaml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -75,7 +99,7 @@ func TestLoadDefaults(t *testing.T) {
 // Defaulting must not manufacture a conflict with a limit the operator did set.
 func TestLoadDefaultsRespectLoweredGlobalLimit(t *testing.T) {
 	t.Parallel()
-	got, err := load(t, "low-global-limit.json")
+	got, err := load(t, "low-global-limit.yaml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -89,7 +113,7 @@ func TestLoadDefaultsRespectLoweredGlobalLimit(t *testing.T) {
 // arrives in the request header.
 func TestLoadAcceptsNoServers(t *testing.T) {
 	t.Parallel()
-	got, err := load(t, "no-servers.json")
+	got, err := load(t, "no-servers.yaml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -107,15 +131,26 @@ func TestLoadRejects(t *testing.T) {
 		// want are fragments the message must contain, beyond the file name.
 		want []string
 	}{
-		{"malformed json", "malformed.json", []string{"invalid character"}},
-		{"missing id", "missing-id.json", []string{"servers[0]", "missing id"}},
-		{"missing command", "missing-command.json", []string{"servers[0]", `"search"`, "missing command"}},
-		{"duplicate id", "duplicate-id.json", []string{"servers[1]", `"search"`, "servers[0]"}},
-		{"unknown era", "unknown-era.json", []string{"servers[0]", `era "ancient"`}},
-		{"unknown field", "unknown-field.json", []string{"commnd"}},
+		// The YAML parser reports where it gave up, which the JSON decoder
+		// behind it cannot do once the file has been converted.
+		{"malformed yaml", "malformed.yaml", []string{"line 1", "did not find expected"}},
+		{"empty file", "empty.yaml", []string{"the file is empty"}},
+		// A duplicate key is resolved to the last one by encoding/json and
+		// refused here, which is the one way an existing JSON file can stop
+		// loading.
+		{"duplicate key", "duplicate-key.yaml", []string{"servers", "already defined"}},
+		// The one mistyped scalar that would otherwise pass: it re-encodes as
+		// a string and reaches the backend altered instead of being refused.
+		{"date in an env value", "date-in-env.yaml", []string{"servers[0].env.RELEASE", "quote it"}},
+		{"two documents", "two-documents.yaml", []string{"trailing content"}},
+		{"missing id", "missing-id.yaml", []string{"servers[0]", "missing id"}},
+		{"missing command", "missing-command.yaml", []string{"servers[0]", `"search"`, "missing command"}},
+		{"duplicate id", "duplicate-id.yaml", []string{"servers[1]", `"search"`, "servers[0]"}},
+		{"unknown era", "unknown-era.yaml", []string{"servers[0]", `era "ancient"`}},
+		{"unknown field", "unknown-field.yaml", []string{"commnd"}},
 		// encoding/json drops the field path when a custom unmarshaler
 		// fails, so the message locates the problem by quoting the value.
-		{"bad duration", "bad-duration.json", []string{"duration", `"5 fortnights"`}},
+		{"bad duration", "bad-duration.yaml", []string{"duration", `"5 fortnights"`}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,7 +178,7 @@ func TestLoadRejects(t *testing.T) {
 // A missing file is reported as such, not as a parse failure.
 func TestLoadMissingFile(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join("testdata", "absent.json")
+	path := filepath.Join("testdata", "absent.yaml")
 	_, err := config.Load(t.Context(), path)
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err = %v, want it to wrap fs.ErrNotExist", err)
@@ -158,7 +193,7 @@ func TestLoadHonorsContext(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := config.Load(ctx, filepath.Join("testdata", "valid.json"))
+	_, err := config.Load(ctx, filepath.Join("testdata", "valid.yaml"))
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want it to wrap context.Canceled", err)
 	}
@@ -170,7 +205,7 @@ func TestLoadErrorsWithholdSecrets(t *testing.T) {
 	// Both files carry a secret and a defect, so a message that echoed its
 	// input would fail here. The second defect is in the env value itself,
 	// which is the input most likely to be quoted back.
-	for _, file := range []string{"secret-and-unknown-era.json", "secret-wrong-type.json"} {
+	for _, file := range []string{"secret-and-unknown-era.yaml", "secret-wrong-type.yaml"} {
 		t.Run(file, func(t *testing.T) {
 			t.Parallel()
 			_, err := load(t, file)

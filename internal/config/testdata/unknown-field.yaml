@@ -1,0 +1,4 @@
+servers:
+  - id: search
+    command: a
+    commnd: typo

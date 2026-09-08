@@ -1,5 +1,0 @@
-{
-  "servers": [
-    {"id": "search", "command": "mcp-server-search"}
-  ]
-}

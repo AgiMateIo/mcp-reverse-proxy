@@ -1,0 +1,4 @@
+{
+	"servers": [{"id": "search", "command": "mcp-server-search"}],
+	"limits": {"maxProcesses": 4}
+}
