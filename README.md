@@ -167,6 +167,40 @@ field but `id` optional. `env` merges key-wise with the server's configured
 environment; every other field replaces it. Its modes, scopes and merge rules
 are in [`docs/deployment.md`](docs/deployment.md).
 
+### Coming from an `mcpServers` config
+
+The block a desktop client keeps translates field by field — `command`, `args`
+and `env` mean the same thing here, and the key becomes `id`:
+
+```json
+{"mcpServers": {
+  "fetch":      {"command": "docker", "args": ["run", "-i", "--rm", "mcp/fetch"]},
+  "duckduckgo": {"command": "docker", "args": ["run", "-i", "--rm", "mcp/duckduckgo"]}
+}}
+```
+
+```yaml
+servers:
+  - id: fetch
+    command: docker
+    args: ["run", "-i", "--rm", "mcp/fetch"]
+    era: legacy
+  - id: duckduckgo
+    command: docker
+    args: ["run", "-i", "--rm", "mcp/duckduckgo"]
+    era: legacy
+```
+
+That configuration is runnable as it stands, and it is the shortest way to see
+the point of the gateway: the same two servers a client would spawn on a laptop
+now run on the host, behind one authenticated endpoint, one pair of processes
+per subject. Their tools arrive namespaced — `fetch__fetch`,
+`duckduckgo__search`, `duckduckgo__fetch_content`.
+
+`era: legacy` because both images speak a revision older than `2026-07-28`.
+`auto` works too and costs one refused `server/discover` per cold start, which
+some servers print to their stderr and the gateway then logs.
+
 ## Further reading
 
 - [`docs/deployment.md`](docs/deployment.md) — every option, the `define-new`

@@ -45,6 +45,29 @@ servers:
     command: /usr/local/bin/mcp-docs
     era: legacy
 
+  # The two below are real and runnable as they stand: `docker run -i --rm`
+  # with a published image is the same stdio server every desktop client
+  # spawns, only started here instead of on somebody's laptop. `-i` is what
+  # keeps stdin open, which is the whole transport; `--rm` reaps the container
+  # when the gateway stops the process.
+  #
+  # An mcpServers block from a client's configuration translates field by
+  # field — command, args, env — so a server already in use elsewhere moves
+  # here unchanged. See the README for the side-by-side.
+  - id: fetch
+    command: docker
+    args: ["run", "-i", "--rm", "mcp/fetch"]
+    # Both images speak a pre-2026-07-28 revision. Under `auto` the gateway
+    # would probe them with `server/discover` first and fall back — which
+    # works, and costs a rejected request whose error some servers print to
+    # stderr on every cold start.
+    era: legacy
+
+  - id: duckduckgo
+    command: docker
+    args: ["run", "-i", "--rm", "mcp/duckduckgo"]
+    era: legacy
+
 # Process count grows as subjects × servers, so these are operational
 # necessities rather than tuning knobs. Durations are what Go's
 # time.ParseDuration accepts: 90s, 5m, 1h30m.
@@ -88,6 +111,9 @@ policy:
   commandAllowlist:
     - /usr/local/bin/mcp-github
     - /usr/local/bin/mcp-docs
+    # An absolute path is the safer entry — `docker` here resolves through the
+    # gateway's own PATH, and the allowlist compares the string as written.
+    - docker
   # Environment keys a header may never set, in any mode. The loader variables
   # belong here: setting one turns an allowed command into an arbitrary one.
   envDenylist:
